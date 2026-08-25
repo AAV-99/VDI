@@ -10,7 +10,7 @@ class VdiCrew:
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    llm = "gemini/gemini-2.0-flash"
+    llm = "gemini/gemini-3.6-flash"
 
     # --- AGENTES VDI 2206 ---
     @agent
