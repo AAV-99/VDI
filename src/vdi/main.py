@@ -1,64 +1,60 @@
 #!/usr/bin/env python
 from pathlib import Path
-
 from pydantic import BaseModel
-
 from crewai.flow import Flow, listen, start
 
-from vdi.crews.content_crew.content_crew import ContentCrew
+from .crews.vdicrew.vdicrew import VdiCrew
 
 
-class ContentState(BaseModel):
-    topic: str = ""
-    outline: str = ""
-    draft: str = ""
-    final_post: str = ""
+class VdiState(BaseModel):
+    system_type: str = ""
+    final_design: str = ""
 
 
-class ContentFlow(Flow[ContentState]):
+class VdiFlow(Flow[VdiState]):
 
     @start()
-    def plan_content(self, crewai_trigger_payload: dict = None):
-        print("Planning content")
+    def plan_design(self, crewai_trigger_payload: dict = None):
+        print("Initializing VDI 2206 Design Cycle")
 
         if crewai_trigger_payload:
-            self.state.topic = crewai_trigger_payload.get("topic", "AI Agents")
+            self.state.system_type = crewai_trigger_payload.get("system_type", "Plastic Extrusion Assembly Cell")
             print(f"Using trigger payload: {crewai_trigger_payload}")
         else:
-            self.state.topic = "AI Agents"
+            self.state.system_type = "Plastic Extrusion Assembly Cell"
 
-        print(f"Topic: {self.state.topic}")
+        print(f"Target System: {self.state.system_type}")
 
-    @listen(plan_content)
-    def generate_content(self):
-        print(f"Generating content on: {self.state.topic}")
+    @listen(plan_design)
+    def generate_design(self):
+        print(f"Running multi-agent design review for: {self.state.system_type}")
         result = (
-            ContentCrew()
+            VdiCrew()
             .crew()
-            .kickoff(inputs={"topic": self.state.topic})
+            .kickoff(inputs={"system_type": self.state.system_type})
         )
 
-        print("Content generated")
-        self.state.final_post = result.raw
+        print("VDI 2206 Design review completed")
+        self.state.final_design = result.raw
 
-    @listen(generate_content)
-    def save_content(self):
-        print("Saving content")
+    @listen(generate_design)
+    def save_design(self):
+        print("Saving conceptual design dossier")
         output_dir = Path("output")
         output_dir.mkdir(exist_ok=True)
-        with open(output_dir / "post.md", "w") as f:
-            f.write(self.state.final_post)
-        print("Post saved to output/post.md")
+        with open(output_dir / "vdi2206_conceptual_design.md", "w", encoding="utf-8") as f:
+            f.write(self.state.final_design)
+        print("Dossier saved to output/vdi2206_conceptual_design.md")
 
 
 def kickoff():
-    content_flow = ContentFlow()
-    content_flow.kickoff()
+    vdi_flow = VdiFlow()
+    vdi_flow.kickoff()
 
 
 def plot():
-    content_flow = ContentFlow()
-    content_flow.plot()
+    vdi_flow = VdiFlow()
+    vdi_flow.plot()
 
 
 def run_with_trigger():
@@ -76,10 +72,10 @@ def run_with_trigger():
     except json.JSONDecodeError:
         raise Exception("Invalid JSON payload provided as argument")
 
-    content_flow = ContentFlow()
+    vdi_flow = VdiFlow()
 
     try:
-        result = content_flow.kickoff({"crewai_trigger_payload": trigger_payload})
+        result = vdi_flow.kickoff({"crewai_trigger_payload": trigger_payload})
         return result
     except Exception as e:
         raise Exception(f"An error occurred while running the flow with trigger: {e}")

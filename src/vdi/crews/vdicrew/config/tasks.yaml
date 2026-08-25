@@ -1,0 +1,76 @@
+requirements_ingestion_task:
+  description: >
+    Analyze, extract, and structure all input data for the {system_type}
+    from raw requirements, multimodal documents, CAD drawings, and audio notes.
+    Build a structured Knowledge Graph baseline representing functional requirements,
+    physical constraints, standards, and target KPIs for the system.
+  expected_output: >
+    A structured specification document containing a categorized list of functional
+    requirements, physical/operational constraints, target KPIs, and a domain mapping
+    for mechanical, electronic, software, and maintenance subsystems.
+  agent: team_lead
+
+mechanical_subsystem_design_task:
+  description: >
+    Based on the structured requirements for the {system_type}, design the mechanical
+    subsystem architecture following VDI 2206 guidelines. Define kinematic sequences,
+    structural layout, actuator types (pneumatic, hydraulic, electric), material
+    selection, and preliminary mechanical stress/load assumptions.
+  expected_output: >
+    A mechanical design proposal for {system_type} detailing structural geometry,
+    kinematic topology, actuator sizing, weight estimates, and CAD modeling criteria.
+  agent: mecanico
+
+electronic_subsystem_design_task:
+  description: >
+    Design the electronic and instrumentation subsystem for the {system_type}.
+    Define sensor placement, fieldbus communication topology (e.g., Profinet, EtherCAT),
+    power distribution schematics, controller/PLC hardware selection, and EMC compliance strategy.
+  expected_output: >
+    An electronic design proposal specifying sensor/actuator I/O mapping, wiring
+    topology, power distribution specs, and hardware component selection.
+  agent: electronico
+
+software_subsystem_design_task:
+  description: >
+    Develop the control and embedded software architecture for the {system_type}.
+    Define state machines, real-time control loops, PLC logic structure (IEC 61131-3),
+    safety interlocks, and Edge/Cloud telemetry integration points.
+  expected_output: >
+    A software architecture document including state transition diagrams, control loop
+    timing requirements, communication interfaces, and module-level code specifications.
+  agent: software
+
+maintenance_rams_eval_task:
+  description: >
+    Evaluate the preliminary subsystem proposals for the {system_type} against Design
+    for Maintenance (DfM) and RAMS criteria. Perform an initial FMEA/AMFE, evaluate
+    physical access for serviceability, specify predictive condition sensors (PHM),
+    and estimate MTBF/MTTR.
+  expected_output: >
+    A reliability and maintainability report detailing FMEA risk scores, accessibility
+    recommendations, PHM sensor requirements, and target maintenance procedures.
+  agent: mantenimiento
+
+client_acceptance_review_task:
+  description: >
+    Review the proposed mechatronic concept for the {system_type} from the stakeholder's
+    perspective. Assess compliance with business KPIs, ROI targets, plant floor space
+    limitations, operator ergonomics, and overall operational safety.
+  expected_output: >
+    A client evaluation report listing accepted specifications, mandatory redesign
+    requests, budget compliance status, and operational approval criteria.
+  agent: cliente
+
+design_board_integration_task:
+  description: >
+    Lead the AI Design Review Board by synthesizing inputs from the
+    mechanical, electronic, software, maintenance, and client evaluation tasks for the
+    {system_type}. Resolve cross-domain trade-offs, compute a global design score,
+    and generate the consolidated conceptual design proposal for human sign-off.
+  expected_output: >
+    A comprehensive VDI 2206 Conceptual Design Dossier containing the integrated
+    mechatronic architecture, cross-domain trade-off matrix, global design score,
+    and formal decision record for human validation.
+  agent: team_lead
+  output_file: output/vdi2206_conceptual_design.md
