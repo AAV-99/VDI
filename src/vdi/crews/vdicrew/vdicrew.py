@@ -1,6 +1,5 @@
 import os
 from crewai import Agent, Crew, Process, Task, LLM
-from crewai.agents.agent_builder.base_agent import BaseAgent
 from crewai.project import CrewBase, agent, crew, task
 
 @CrewBase
@@ -10,7 +9,12 @@ class VdiCrew:
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    llm = "gemini/gemini-3.6-flash"
+    # Configuración del LLM con control de tokens
+    llm = LLM(
+        model="gemini/gemini-3.6-flash", # O la versión habilitada en tu API
+        temperature=0.2,
+        max_tokens=4000,                  # Límite máximo de tokens por respuesta del agente
+    )
 
     # --- AGENTES VDI 2206 ---
     @agent
@@ -37,53 +41,58 @@ class VdiCrew:
     def cliente(self) -> Agent:
         return Agent(config=self.agents_config["cliente"], llm=self.llm, verbose=True)
 
-    # --- TAREAS VDI 2206 ---
+    # --- TAREAS CON SALIDA A ARCHIVOS INDIVIDUALES ---
     @task
     def requirements_ingestion_task(self) -> Task:
         return Task(
-            config=self.tasks_config["requirements_ingestion_task"],  # type: ignore[index]
+            config=self.tasks_config["requirements_ingestion_task"],
+            output_file="output/01_requirements_and_system.md"
         )
 
     @task
     def mechanical_subsystem_design_task(self) -> Task:
         return Task(
-            config=self.tasks_config["mechanical_subsystem_design_task"],  # type: ignore[index]
+            config=self.tasks_config["mechanical_subsystem_design_task"],
+            output_file="output/02_mechanical_subsystem.md"
         )
 
     @task
     def electronic_subsystem_design_task(self) -> Task:
         return Task(
-            config=self.tasks_config["electronic_subsystem_design_task"],  # type: ignore[index]
+            config=self.tasks_config["electronic_subsystem_design_task"],
+            output_file="output/03_electronic_subsystem.md"
         )
 
     @task
     def software_subsystem_design_task(self) -> Task:
         return Task(
-            config=self.tasks_config["software_subsystem_design_task"],  # type: ignore[index]
+            config=self.tasks_config["software_subsystem_design_task"],
+            output_file="output/04_software_architecture.md"
         )
 
     @task
     def maintenance_rams_eval_task(self) -> Task:
         return Task(
-            config=self.tasks_config["maintenance_rams_eval_task"],  # type: ignore[index]
+            config=self.tasks_config["maintenance_rams_eval_task"],
+            output_file="output/05_rams_maintenance.md"
         )
 
     @task
     def client_acceptance_review_task(self) -> Task:
         return Task(
-            config=self.tasks_config["client_acceptance_review_task"],  # type: ignore[index]
+            config=self.tasks_config["client_acceptance_review_task"],
+            output_file="output/06_client_acceptance.md"
         )
 
     @task
     def design_board_integration_task(self) -> Task:
         return Task(
-            config=self.tasks_config["design_board_integration_task"],  # type: ignore[index]
+            config=self.tasks_config["design_board_integration_task"],
+            output_file="output/00_vdi2206_consolidated_dossier.md"
         )
 
-    # --- TRIPULACIÓN / PROCESO ---
     @crew
     def crew(self) -> Crew:
-        """Creates the VDI 2206 Design Crew"""
         return Crew(
             agents=self.agents,
             tasks=self.tasks,

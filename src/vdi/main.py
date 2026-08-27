@@ -7,7 +7,24 @@ from .crews.vdicrew.vdicrew import VdiCrew
 
 
 class VdiState(BaseModel):
-    system_type: str = ""
+    system_type: str = "Efector Final (Gripper) para Manipulación de Láminas de Acero"
+    project_scope: str = (
+        "Diseño mecatrónico e integración de un efector final (gripper) liviano (< 1.5 kg) "
+        "diseñado para acople directo a la brida ISO 9409-1-50-4-M6 del cobot Universal Robots UR5. "
+        "El sistema tomará láminas planas de acero AISI/SAE 1020 de 250x250x2 mm (~0.98 kg) "
+        "provenientes directamente de una estación de corte láser (superficie seca, con posible presencia "
+        "de rebaba o temperatura leve) y las alimentará a una celda de doblado o soldadura. "
+        "Se debe proponer y justificar el principio de sujeción óptimo (mecánico, magnético, vacío o híbrido)."
+    )
+    primary_requirements: str = (
+        "Masa total del gripper <= 1.5 kg (para garantizar carga combinada <= 2.5 kg en el UR5). "
+        "Tiempo de ciclo pick-and-place <= 4.0 s. "
+        "Garantizar sujeción segura y repetible de las láminas considerando rebabas o imperfecciones de borde. "
+        "Inclusión de sensado de verificación de agarre seguro ('pieza sujeta') antes de autorizar trayectoria del robot. "
+        "Alimentación y control compatible con la interfaz del UR5 (Tool I/O 24V DC / señales digitales o armario). "
+        "Cumplimiento de criterios de seguridad para robótica colaborativa bajo la norma ISO/TS 15066 "
+        "(geometría libre de bordes cortantes o puntos de atrapamiento)."
+    )
     final_design: str = ""
 
 
@@ -18,20 +35,28 @@ class VdiFlow(Flow[VdiState]):
         print("Initializing VDI 2206 Design Cycle")
 
         if crewai_trigger_payload:
-            self.state.system_type = crewai_trigger_payload.get("system_type", "Plastic Extrusion Assembly Cell")
+            self.state.system_type = crewai_trigger_payload.get("system_type", self.state.system_type)
+            self.state.project_scope = crewai_trigger_payload.get("project_scope", self.state.project_scope)
+            self.state.primary_requirements = crewai_trigger_payload.get("primary_requirements", self.state.primary_requirements)
             print(f"Using trigger payload: {crewai_trigger_payload}")
-        else:
-            self.state.system_type = "Plastic Extrusion Assembly Cell"
 
         print(f"Target System: {self.state.system_type}")
 
     @listen(plan_design)
     def generate_design(self):
         print(f"Running multi-agent design review for: {self.state.system_type}")
+        
+        # Diccionario con los 3 placeholders genéricos
+        inputs = {
+            "system_type": self.state.system_type,
+            "project_scope": self.state.project_scope,
+            "primary_requirements": self.state.primary_requirements,
+        }
+        
         result = (
             VdiCrew()
             .crew()
-            .kickoff(inputs={"system_type": self.state.system_type})
+            .kickoff(inputs=inputs)
         )
 
         print("VDI 2206 Design review completed")
