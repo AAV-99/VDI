@@ -11,9 +11,11 @@ class VdiCrew:
 
     # Configuración del LLM con control de tokens
     llm = LLM(
-        model="gemini/gemini-3.6-flash", # O la versión habilitada en tu API
+        model="gemini/gemini-3.5-flash", # O la versión habilitada en tu API
         temperature=0.2,
         max_tokens=4000,                  # Límite máximo de tokens por respuesta del agente
+        max_retries=4,                  # Límite de solicitudes por agente
+        timeout=120,               # Tiempo máximo de espera por solicitud
     )
 
     # --- AGENTES VDI 2206 ---
