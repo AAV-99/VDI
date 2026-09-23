@@ -1,0 +1,27 @@
+services:
+  notebook:
+    image: quay.io/jupyter/tensorflow-notebook:x86_64-cuda-latest
+    container_name: si7016-tensorflow-notebook-gpu
+
+    runtime: nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+
+    shm_size: "2g"
+
+    ports:
+      - "8888:8888"
+
+    volumes:
+      - ${HOME}/si7016-262:/home/jovyan
+
+    stdin_open: true
+    tty: true
+
+    # Desactiva la solicitud de token y contraseña
+    command: start-notebook.sh --ServerApp.token='' --ServerApp.password=''
