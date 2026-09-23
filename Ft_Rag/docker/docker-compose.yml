@@ -20,7 +20,7 @@ services:
       - "8888:8888"
 
     volumes:
-      - ${HOME}/si7016-262:/home/jovyan
+      - ${HOME}/si7016-262:/home/jovyan/labs
 
     stdin_open: true
     tty: true
