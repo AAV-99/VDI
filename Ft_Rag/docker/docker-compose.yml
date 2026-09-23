@@ -2,6 +2,8 @@ services:
   notebook:
     image: quay.io/jupyter/tensorflow-notebook:x86_64-cuda-latest
     container_name: si7016-tensorflow-notebook-gpu
+    group_add:
+      - "100"
 
     runtime: nvidia
     deploy:
