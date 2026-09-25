@@ -12,10 +12,7 @@ class VdiCrew:
     llm = LLM(
         model="ollama/qwen3.8:27b",  # Tag exacto de tu modelo
         base_url="http://localhost:11434",  # Cambia por la IP de Hefesto si ejecutas el script de forma remota
-        config={
-            #"num_ctx": 16384,  # Ventana de contexto recomendada para expedientes VDI 2206
-            "temperature": 0.2,  # Temperatura baja para mayor consistencia en diseño técnico
-        },
+        temperature= 0.2,  # Temperatura baja para mayor consistencia en diseño técnico
     )
 
     """     # Configuración del LLM con control de tokens
