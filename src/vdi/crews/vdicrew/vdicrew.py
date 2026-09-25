@@ -9,14 +9,23 @@ class VdiCrew:
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    # Configuración del LLM con control de tokens
+    llm = LLM(
+        model="ollama/qwen3.8:27b",  # Tag exacto de tu modelo
+        base_url="http://localhost:11434",  # Cambia por la IP de Hefesto si ejecutas el script de forma remota
+        config={
+            #"num_ctx": 16384,  # Ventana de contexto recomendada para expedientes VDI 2206
+            "temperature": 0.2,  # Temperatura baja para mayor consistencia en diseño técnico
+        },
+    )
+
+    """     # Configuración del LLM con control de tokens
     llm = LLM(
         model="gemini/gemini-3.5-flash", # O la versión habilitada en tu API
         temperature=0.2,
         max_tokens=4000,                  # Límite máximo de tokens por respuesta del agente
         max_retries=4,                  # Límite de solicitudes por agente
         timeout=120,               # Tiempo máximo de espera por solicitud
-    )
+    ) """
 
     # --- AGENTES VDI 2206 ---
     @agent
