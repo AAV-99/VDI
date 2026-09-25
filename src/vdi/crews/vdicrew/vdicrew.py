@@ -10,12 +10,17 @@ class VdiCrew:
     tasks_config = "config/tasks.yaml"
 
     llm = LLM(
-        model="ollama/qwen3.8:latest",  # Tag exacto de tu modelo
-        base_url="http://localhost:11434",  # Cambia por la IP de Hefesto si ejecutas el script de forma remota
-        temperature= 0.2,  # Temperatura baja para mayor consistencia en diseño técnico
-        max_tokens=2048,  # Límite máximo de tokens por respuesta del agente
-        max_retries=4,  # Límite de solicitudes por agente
-        timeout=3600,  # Tiempo máximo de espera por solicitud
+        model="ollama/qwen3.8:latest",
+        base_url="http://localhost:11434",
+        temperature=0.2,
+        max_tokens=8192,
+        max_retries=4,
+        timeout=3600,
+        extra_body={
+            "options": {
+                "num_ctx": 16384  
+            }
+        }
     )
 
     """     # Configuración del LLM con control de tokens
