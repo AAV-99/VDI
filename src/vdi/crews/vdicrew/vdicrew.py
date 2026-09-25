@@ -13,6 +13,9 @@ class VdiCrew:
         model="ollama/qwen3.8:latest",  # Tag exacto de tu modelo
         base_url="http://localhost:11434",  # Cambia por la IP de Hefesto si ejecutas el script de forma remota
         temperature= 0.2,  # Temperatura baja para mayor consistencia en diseño técnico
+        max_tokens=2048,  # Límite máximo de tokens por respuesta del agente
+        max_retries=4,  # Límite de solicitudes por agente
+        timeout=3600,  # Tiempo máximo de espera por solicitud
     )
 
     """     # Configuración del LLM con control de tokens
