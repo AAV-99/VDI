@@ -18,7 +18,8 @@ class VdiCrew:
         timeout=3600,
         extra_body={
             "options": {
-                "num_ctx": 8192  
+                "num_ctx": 12288,
+                "num_predict": 4096, 
             }
         }
     )
