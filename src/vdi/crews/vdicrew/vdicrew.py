@@ -13,12 +13,12 @@ class VdiCrew:
         model="ollama/qwen3.8:latest",
         base_url="http://localhost:11434",
         temperature=0.2,
-        max_tokens=8192,
+        #max_tokens=8192,
         max_retries=4,
         timeout=3600,
         extra_body={
             "options": {
-                "num_ctx": 16384  
+                "num_ctx": 8192  
             }
         }
     )
