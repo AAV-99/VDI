@@ -1,0 +1,4 @@
+comparacion,estadistico,p_valor,significativo_p<0.05
+afinado vs base,17.0,2.0491129249680643e-17,SI
+rag vs base,746.5,1.6818416258273704e-05,SI
+afinado vs rag,55.0,4.4053900125479965e-17,SI
