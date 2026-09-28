@@ -13,8 +13,8 @@ class VdiCrew:
         model="ollama/qwen3.8:latest",
         base_url="http://localhost:11434",
         temperature=0.2,
-        max_tokens=16384,
-        max_retries=4,
+        #max_tokens=16384,
+        max_retries=0,
         timeout=3600,
     )
 
