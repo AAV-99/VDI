@@ -19,7 +19,7 @@ class VdiCrew:
         extra_body={
             "options": {
                 "num_ctx": 12288,
-                "num_predict": 4096, 
+                "num_predict": 8192, 
             }
         }
     )
@@ -114,5 +114,6 @@ class VdiCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
+            memory=False,
             verbose=True,
         )
