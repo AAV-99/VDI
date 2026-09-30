@@ -15,7 +15,7 @@ class VdiCrew:
         temperature=0.2,
         max_retries=1,
         timeout=10800,
-        num_ctx=65536,
+        #num_ctx=65536,
     )
 
     """     # Configuración del LLM con control de tokens
