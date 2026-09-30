@@ -13,14 +13,10 @@ class VdiCrew:
         model="ollama/qwen3.8:latest",
         base_url="http://localhost:11434",
         temperature=0.2,
-        max_tokens=16000,
+        #max_tokens=16000,
         max_retries=1,
         timeout=10800,
-        extra_body={
-            "options": {
-                "num_ctx": 65536,
-            }    
-        }
+        num_ctx= 65536,
     )
 
     """     # Configuración del LLM con control de tokens
