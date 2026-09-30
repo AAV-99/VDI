@@ -10,13 +10,12 @@ class VdiCrew:
     tasks_config = "config/tasks.yaml"
 
     llm = LLM(
-        model="ollama/qwen3.8:latest",
+        model="ollama_chat/qwen3.8-vdi",   # qwen3.8 con num_ctx=65536 fijado en el servidor (Modelfile)
         base_url="http://localhost:11434",
         temperature=0.2,
-        #max_tokens=16000,
         max_retries=1,
         timeout=10800,
-        num_ctx= 65536,
+        num_ctx=65536,
     )
 
     """     # Configuración del LLM con control de tokens

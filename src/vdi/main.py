@@ -1,4 +1,6 @@
 #!/usr/bin/env python
+import os
+import signal
 from pathlib import Path
 from pydantic import BaseModel
 from crewai.flow import Flow, listen, start
@@ -77,7 +79,16 @@ class VdiFlow(Flow[VdiState]):
         print("Dossier saved to output/vdi2206_conceptual_design.md")
 
 
+def _salida_inmediata(signum, frame):
+    # Ctrl+C solo interrumpe el hilo principal; el crew corre en otro hilo del Flow
+    # y seguiria enviando peticiones a Ollama. os._exit termina todo el proceso.
+    print("\n[VDI] Interrumpido: cerrando proceso y conexiones a Ollama.", flush=True)
+    os._exit(130)
+
+
 def kickoff():
+    signal.signal(signal.SIGINT, _salida_inmediata)
+    signal.signal(signal.SIGTERM, _salida_inmediata)
     vdi_flow = VdiFlow()
     vdi_flow.kickoff()
 
