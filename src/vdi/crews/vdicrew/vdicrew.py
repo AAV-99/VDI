@@ -1,4 +1,3 @@
-import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -71,7 +70,7 @@ class VdiCrew:
     # Reintentos con espera exponencial (5, 10, 20, 40, 80, 120... s) ante 429/5xx,
     # p. ej. "503 This model is currently experiencing high demand".
     llm = LLM(
-        model="gemini/gemini-3.5-flash", # O la versión habilitada en tu API
+        model="gemini/gemini-3.6-flash", # O la versión habilitada en tu API
         temperature=0.2,
         max_tokens=32000,                # Incluye tokens de razonamiento; con 4000 los informes se cortan
         client_params={
@@ -112,69 +111,41 @@ class VdiCrew:
     def cliente(self) -> Agent:
         return Agent(config=self.agents_config["cliente"], llm=self.llm, verbose=True)
 
-    # --- TAREAS CON SALIDA A ARCHIVOS INDIVIDUALES ---
-    @task
-    def requirements_ingestion_task(self) -> Task:
+    # --- TAREAS (output_file definido en tasks.yaml) ---
+    def _tarea(self, nombre: str) -> Task:
         return Task(
-            config=self.tasks_config["requirements_ingestion_task"],
-            output_file="output/01_requirements_and_system.md",
-            guardrail=guardrail_informe_completo("requirements_ingestion_task"),
+            config=self.tasks_config[nombre],  # type: ignore[index]
+            guardrail=guardrail_informe_completo(nombre),
             guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
         )
+
+    @task
+    def requirements_ingestion_task(self) -> Task:
+        return self._tarea("requirements_ingestion_task")
 
     @task
     def mechanical_subsystem_design_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["mechanical_subsystem_design_task"],
-            output_file="output/02_mechanical_subsystem.md",
-            guardrail=guardrail_informe_completo("mechanical_subsystem_design_task"),
-            guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
-        )
+        return self._tarea("mechanical_subsystem_design_task")
 
     @task
     def electronic_subsystem_design_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["electronic_subsystem_design_task"],
-            output_file="output/03_electronic_subsystem.md",
-            guardrail=guardrail_informe_completo("electronic_subsystem_design_task"),
-            guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
-        )
+        return self._tarea("electronic_subsystem_design_task")
 
     @task
     def software_subsystem_design_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["software_subsystem_design_task"],
-            output_file="output/04_software_architecture.md",
-            guardrail=guardrail_informe_completo("software_subsystem_design_task"),
-            guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
-        )
+        return self._tarea("software_subsystem_design_task")
 
     @task
     def maintenance_rams_eval_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["maintenance_rams_eval_task"],
-            output_file="output/05_rams_maintenance.md",
-            guardrail=guardrail_informe_completo("maintenance_rams_eval_task"),
-            guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
-        )
+        return self._tarea("maintenance_rams_eval_task")
 
     @task
     def client_acceptance_review_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["client_acceptance_review_task"],
-            output_file="output/06_client_acceptance.md",
-            guardrail=guardrail_informe_completo("client_acceptance_review_task"),
-            guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
-        )
+        return self._tarea("client_acceptance_review_task")
 
     @task
     def design_board_integration_task(self) -> Task:
-        return Task(
-            config=self.tasks_config["design_board_integration_task"],
-            output_file="output/00_vdi2206_consolidated_dossier.md",
-            guardrail=guardrail_informe_completo("design_board_integration_task"),
-            guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
-        )
+        return self._tarea("design_board_integration_task")
 
     @crew
     def crew(self) -> Crew:
@@ -182,6 +153,5 @@ class VdiCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
-            memory=False,
             verbose=True,
         )

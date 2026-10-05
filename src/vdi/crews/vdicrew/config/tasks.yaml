@@ -1,9 +1,15 @@
 requirements_ingestion_task:
   description: >
-    Analizar el tipo de proyecto {system_type}, el alcance general {project_scope}, los requerimientos
-    principales {primary_requirements} y el presupuesto {target_cost}. Establecer los límites del sistema mecatrónico o IoT bajo la
-    metodología VDI 2206 y formular la matriz inicial de requerimientos funcionales y restricciones.
+    CONTEXTO DEL PROYECTO:
+
+    {contexto}
+
+    TAREA: Analizar el tipo de sistema, el alcance, los requerimientos primarios y el costo objetivo descritos en el
+    contexto. Establecer los límites del sistema mecatrónico o IoT bajo la metodología VDI 2206 y formular la matriz
+    inicial de requerimientos funcionales y restricciones.
+
     REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art.
+
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
     Un informe de arquitectura de sistema completo en Markdown, estructurado formalmente en capítulos técnicos sin prosa de relleno, delimitando los límites conceptuales del proyecto.
@@ -12,11 +18,17 @@ requirements_ingestion_task:
 
 mechanical_subsystem_design_task:
   description: >
-    Desarrollar la propuesta conceptual del subsistema mecánico, estructural o de envolvente para {system_type}.
-    Explicar los conceptos mecánicos adoptados para cumplir con {project_scope}, detallando qué mecanismos,
-    sistemas de sujeción, transmisión o disipación se utilizarán. Generar una tabla de BOM Preliminar Mecánico
-    especificando materiales (aleaciones, polímeros, compuestos) y componentes comerciales principales.
+    CONTEXTO DEL PROYECTO:
+
+    {contexto}
+
+    TAREA: Desarrollar la propuesta conceptual del subsistema mecánico, estructural o de envolvente para el sistema
+    descrito en el contexto. Explicar los conceptos mecánicos adoptados para cumplir con el alcance del proyecto,
+    detallando qué mecanismos, sistemas de sujeción, transmisión o disipación se utilizarán. Generar una tabla de BOM
+    Preliminar Mecánico especificando materiales (aleaciones, polímeros, compuestos) y componentes comerciales principales.
+
     REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.
+
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
     Un reporte técnico del subsistema mecánico exhaustivo que desglose la justificación conceptual de los mecanismos y presente la tabla BOM preliminar completa.
@@ -25,10 +37,16 @@ mechanical_subsystem_design_task:
 
 electronic_subsystem_design_task:
   description: >
-    Desarrollar la propuesta conceptual del subsistema electrónico, hardware y control para {system_type}.
-    Explicar la arquitectura de instrumentación, sensores, actuadores, etapas de potencia y comunicación
-    para responder a {primary_requirements}. Construir una tabla de BOM Preliminar Electrónico de componentes comerciales.
+    CONTEXTO DEL PROYECTO:
+
+    {contexto}
+
+    TAREA: Desarrollar la propuesta conceptual del subsistema electrónico, hardware y control para el sistema descrito
+    en el contexto. Explicar la arquitectura de instrumentación, sensores, actuadores, etapas de potencia y comunicación
+    para responder a los requerimientos primarios. Construir una tabla de BOM Preliminar Electrónico de componentes comerciales.
+
     REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.
+
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
     Un reporte técnico del subsistema electrónico detallado con diagramas de bloques en Mermaid y la tabla BOM preliminar de componentes electrónicos comercialmente disponibles.
@@ -37,10 +55,16 @@ electronic_subsystem_design_task:
 
 software_subsystem_design_task:
   description: >
-    Desarrollar la propuesta conceptual de la arquitectura de software o firmware para {system_type}. Explicar
-    la organización modular (procesamiento en el borde, tiempo real, capas de red, HMI/Cloud según aplique)
-    necesaria para {primary_requirements}. Proponer el stack de tecnologías, plataformas y herramientas sugeridas.
+    CONTEXTO DEL PROYECTO:
+
+    {contexto}
+
+    TAREA: Desarrollar la propuesta conceptual de la arquitectura de software o firmware para el sistema descrito en el
+    contexto. Explicar la organización modular (procesamiento en el borde, tiempo real, capas de red, HMI/Cloud según
+    aplique) necesaria para los requerimientos primarios. Proponer el stack de tecnologías, plataformas y herramientas sugeridas.
+
     REGLA DE FORMATO: Modulos, capas de firmware y máquinas de estado deben diagramarse mediante sintaxis Mermaid (```mermaid) o tablas de transición de estado. NO INCLUIR NINGÚN BLOQUE DE CÓDIGO NI ASCII ART.
+
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
     Un documento conceptual de arquitectura de software/firmware exhaustivo que describa los módulos del sistema y las tecnologías propuestas, redactado en prosa técnica densa y diagramas Mermaid.
@@ -49,10 +73,16 @@ software_subsystem_design_task:
 
 maintenance_rams_eval_task:
   description: >
-    Evaluar Confiabilidad, Disponibilidad, Mantenibilidad y Seguridad (RAMS) para {system_type} en el marco de
-    {project_scope}. Definir la modularidad para reemplazo rápido de piezas y proponer la estrategia de
-    diagnóstico o monitoreo de condición (PHM).
+    CONTEXTO DEL PROYECTO:
+
+    {contexto}
+
+    TAREA: Evaluar Confiabilidad, Disponibilidad, Mantenibilidad y Seguridad (RAMS) para el sistema descrito en el
+    contexto, en el marco de su alcance. Definir la modularidad para reemplazo rápido de piezas y proponer la estrategia
+    de diagnóstico o monitoreo de condición (PHM).
+
     REGLA DE FORMATO: Presenta matrices de riesgo, estimaciones RAMS y estrategias PHM en tablas cuantitativas claras y diagramas de flujo en sintaxis Mermaid (```mermaid).
+
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
     Un reporte RAMS completo con métricas estimadas, matriz FMEA/RAMS y la arquitectura para mantenimiento y monitoreo condicional.
@@ -61,9 +91,16 @@ maintenance_rams_eval_task:
 
 client_acceptance_review_task:
   description: >
-    Revisar de forma integral las propuestas técnicas entregadas para {system_type} asegurando el cumplimiento
-    de {primary_requirements} y el {target_cost}. Emitir el dictamen de validación, observaciones de usabilidad y solicitudes de cambio.
+    CONTEXTO DEL PROYECTO:
+
+    {contexto}
+
+    TAREA: Revisar de forma integral las propuestas técnicas entregadas para el sistema descrito en el contexto,
+    asegurando el cumplimiento de los requerimientos primarios y el costo objetivo. Emitir el dictamen de validación,
+    observaciones de usabilidad y solicitudes de cambio.
+
     REGLA DE FORMATO: Organiza la validación en una matriz de conformidad (Tabla Markdown) evaluando cada requisito frente al costo y desempeño propuesto.
+
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
     Un reporte de evaluación del cliente con la matriz de revisión técnico-económica, observaciones puntuales y dictamen final de aceptación.
@@ -72,10 +109,16 @@ client_acceptance_review_task:
 
 design_board_integration_task:
   description: >
-    Sintetizar y consolidar las entregas de todas las disciplinas en el Dossier de Diseño Conceptual VDI 2206
-    final para {system_type}. Resolver conflictos entre dominios, articular la integración VDI 2206 y calcular la puntuación ponderada global 
-    del diseño, además de verificar el cumplimiento del presupuesto {target_cost}.
+    CONTEXTO DEL PROYECTO:
+
+    {contexto}
+
+    TAREA: Sintetizar y consolidar las entregas de todas las disciplinas en el Dossier de Diseño Conceptual VDI 2206
+    final para el sistema descrito en el contexto. Resolver conflictos entre dominios, articular la integración VDI 2206,
+    calcular la puntuación ponderada global del diseño y verificar el cumplimiento del costo objetivo.
+
     REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.
+
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
     El expediente final consolidado (Conceptual Design Dossier) completo en formato Markdown según la metodología VDI 2206.

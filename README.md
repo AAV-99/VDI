@@ -80,26 +80,26 @@ Sigue esta secuencia de pasos para configurar el entorno desde cero en un sistem
    GEMINI_API_KEY="tu_api_key_aqui"
    ```
 
-### 6. Modificar Parámetros del Código (Caso de Estudio)
+### 6. Definir el Contexto del Proyecto (Caso de Estudio)
 
-Abre el archivo `src/vdi/main.py` y ajusta los parámetros de tu proyecto en la clase `VdiState` según tus necesidades:
+Todos los agentes leen el contexto del proyecto desde `src/vdi/contexto.txt`. Edita ese archivo y respeta las secciones:
 
-```python
-class VdiState(BaseModel):
-    system_type: str = "Efector Final (Gripper) para Manipulación de Láminas de Acero"
-    project_scope: str = (
-        "Diseño mecatrónico e integración de un efector final (gripper) liviano (< 1.5 kg) "
-        "diseñado para acople directo a la brida ISO 9409-1-50-4-M6 del cobot Universal Robots UR5. "
-        "El sistema tomará láminas planas de acero AISI/SAE 1020 de 250x250x2 mm (~0.98 kg) "
-        "provenientes directamente de una estación de corte láser y las alimentará a una celda de doblado o soldadura."
-    )
-    primary_requirements: str = (
-        "Masa total del gripper <= 1.5 kg. Tiempo de ciclo pick-and-place <= 4.0 s. "
-        "Inclusión de sensado de verificación de agarre seguro ('pieza sujeta'). "
-        "Alimentación y control compatible con la Tool I/O del UR5 (24V DC). "
-        "Cumplimiento de seguridad colaborativa bajo la norma ISO/TS 15066."
-    )
+```text
+## TIPO DE SISTEMA
+Efector Final (Gripper) para Manipulación de Láminas de Acero
+
+## ALCANCE DEL PROYECTO
+Diseño mecatrónico e integración de un efector final (gripper) liviano (< 1.5 kg) ...
+
+## REQUERIMIENTOS PRIMARIOS
+- Masa total del gripper <= 1.5 kg ...
+- Tiempo de ciclo pick-and-place <= 4.0 s.
+
+## COSTO OBJETIVO
+Costo objetivo de fabricación <= 1000 USD.
 ```
+
+El modelo de Gemini se configura en `src/vdi/crews/vdicrew/vdicrew.py` (por defecto `gemini/gemini-3.6-flash`).
 
 ### 7. Ejecutar
 

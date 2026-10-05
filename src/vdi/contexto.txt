@@ -1,0 +1,16 @@
+## TIPO DE SISTEMA
+Efector Final (Gripper) para Manipulación de Láminas de Acero
+
+## ALCANCE DEL PROYECTO
+Diseño mecatrónico e integración de un efector final (gripper) liviano (< 1.5 kg) diseñado para acople directo a la brida ISO 9409-1-50-4-M6 del cobot Universal Robots UR5. El sistema tomará láminas planas de acero AISI/SAE 1020 de 250x250x2 mm (~0.98 kg) provenientes directamente de una estación de corte láser (superficie seca, con posible presencia de rebaba o temperatura leve) y las alimentará a una celda de doblado o soldadura. Se debe proponer y justificar el principio de sujeción óptimo (mecánico, magnético, vacío o híbrido).
+
+## REQUERIMIENTOS PRIMARIOS
+- Masa total del gripper <= 1.5 kg (para garantizar carga combinada <= 2.5 kg en el UR5).
+- Tiempo de ciclo pick-and-place <= 4.0 s.
+- Garantizar sujeción segura y repetible de las láminas considerando rebabas o imperfecciones de borde.
+- Inclusión de sensado de verificación de agarre seguro ('pieza sujeta') antes de autorizar trayectoria del robot.
+- Alimentación y control compatible con la interfaz del UR5 (Tool I/O 24V DC / señales digitales o armario).
+- Cumplimiento de criterios de seguridad para robótica colaborativa bajo la norma ISO/TS 15066 (geometría libre de bordes cortantes o puntos de atrapamiento).
+
+## COSTO OBJETIVO
+Costo objetivo de fabricación <= 1000 USD.
