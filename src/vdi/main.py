@@ -5,7 +5,8 @@ from pathlib import Path
 from pydantic import BaseModel
 from crewai.flow import Flow, listen, start
 
-from .crews.vdicrew.vdicrew import VdiCrew
+from .corrida import RUN_DIR, registrar_fin, registrar_inicio
+from .crews.vdicrew.vdicrew import (LLM_CONFIG, MAX_PALABRAS, MAX_REINTENTOS_INCOMPLETO, VdiCrew)
 
 
 class VdiState(BaseModel):
@@ -57,8 +58,14 @@ class VdiFlow(Flow[VdiState]):
             "system_type": self.state.system_type,
             "project_scope": self.state.project_scope,
             "primary_requirements": self.state.primary_requirements,
-            "target_cost": self.state.target_cost
+            "target_cost": self.state.target_cost,
+            "max_palabras": MAX_PALABRAS,
         }
+        registrar_inicio(
+            LLM_CONFIG,
+            inputs,
+            {"max_palabras_por_informe": MAX_PALABRAS, "max_reintentos_guardrail": MAX_REINTENTOS_INCOMPLETO},
+        )
         
         result = (
             VdiCrew()
@@ -72,25 +79,31 @@ class VdiFlow(Flow[VdiState]):
     @listen(generate_design)
     def save_design(self):
         print("Saving conceptual design dossier")
-        output_dir = Path("output")
-        output_dir.mkdir(exist_ok=True)
-        with open(output_dir / "vdi2206_conceptual_design.md", "w", encoding="utf-8") as f:
+        RUN_DIR.mkdir(parents=True, exist_ok=True)
+        with open(RUN_DIR / "vdi2206_conceptual_design.md", "w", encoding="utf-8") as f:
             f.write(self.state.final_design)
-        print("Dossier saved to output/vdi2206_conceptual_design.md")
+        registrar_fin("completada")
+        print(f"Dossier saved to {RUN_DIR / 'vdi2206_conceptual_design.md'}")
 
 
 def _salida_inmediata(signum, frame):
     # Ctrl+C solo interrumpe el hilo principal; el crew corre en otro hilo del Flow
     # y seguiria enviando peticiones a Ollama. os._exit termina todo el proceso.
     print("\n[VDI] Interrumpido: cerrando proceso y conexiones a Ollama.", flush=True)
+    registrar_fin("interrumpida")
     os._exit(130)
 
 
 def kickoff():
     signal.signal(signal.SIGINT, _salida_inmediata)
     signal.signal(signal.SIGTERM, _salida_inmediata)
+    print(f"[VDI] Carpeta de la corrida: {RUN_DIR}", flush=True)
     vdi_flow = VdiFlow()
-    vdi_flow.kickoff()
+    try:
+        vdi_flow.kickoff()
+    except Exception as e:
+        registrar_fin(f"error: {type(e).__name__}: {e}")
+        raise
 
 
 def plot():
