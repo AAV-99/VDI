@@ -1,0 +1,55 @@
+=== CONTEXTO DEL PROYECTO VDI 2206 ===
+Generado: 2026-10-04 15:52:39
+
+## TIPO DE SISTEMA
+Efector final (gripper) de vacío para manipulación de láminas de acero estampadas
+
+## ALCANCE DEL PROYECTO
+Diseñar un gripper de ventosas para un robot industrial de 6 ejes que toma láminas de acero estampadas (paneles de puerta) desde un rack de almacenamiento y las deposita en el dispositivo de soldadura de una celda de ensamble de carrocería. El gripper se integra con el robot mediante brida ISO 9409-1-100 y con el PLC de celda por señales digitales de 24 V. Incluye estructura, generación de vacío, sensórica de presencia de pieza y lógica de control. No incluye el robot, el rack ni el dispositivo de soldadura.
+
+## REQUERIMIENTOS PRIMARIOS
+- Masa máxima de la pieza: 8 kg (lámina de acero de 0.8 mm, 1200 x 900 mm).
+- Masa máxima del gripper: 6 kg.
+- Tiempo de ciclo tomar-depositar: <= 12 s.
+- Factor de seguridad de sujeción: >= 2 con aceleración de 5 m/s2.
+- Alimentación eléctrica: 24 V DC. Aire comprimido disponible: 6 bar.
+- La pieza no debe caer ante pérdida de energía eléctrica.
+- Sin marcas ni deformaciones visibles en la superficie de la lámina.
+
+## CONTEXTO ADICIONAL
+La celda trabaja 2 turnos de 8 horas, 5 días por semana. Las láminas llegan con película de aceite de estampado. El mantenimiento preventivo se hace una vez por semana con ventana de 30 minutos. Presupuesto objetivo de materiales: 4.500 USD.
+
+=== DOCUMENTOS ADJUNTOS ===
+
+--- DOCUMENTO 1: especificacion_cliente.docx ---
+Especificación del cliente — Gripper de láminas (ejemplo)
+Documento de ejemplo para probar la carga de archivos .docx en la interfaz.
+Criterios de aceptación
+ID | Criterio | Método de verificación
+CA-01 | 300 ciclos consecutivos sin caída de pieza | Prueba en celda
+CA-02 | Retención de la pieza >= 60 s tras corte de energía | Prueba funcional
+CA-03 | Sin marcas visibles en la lámina | Inspección visual con luz rasante
+CA-04 | Cambio de ventosa en menos de 5 minutos | Cronometraje
+--- FIN DOCUMENTO 1 ---
+
+--- DOCUMENTO 2: ficha_tecnica_robot.txt ---
+FICHA TÉCNICA — ROBOT DE CELDA (datos de ejemplo para prueba)
+
+Tipo: robot articulado de 6 ejes
+Carga útil nominal en muñeca: 20 kg
+Alcance máximo: 1650 mm
+Repetibilidad: +/- 0.05 mm
+Brida de montaje: ISO 9409-1-100-6-M8
+Aceleración máxima usada en la trayectoria: 5 m/s2
+Señales disponibles en muñeca: 8 entradas digitales, 8 salidas digitales, 24 V DC, 2 A máx.
+Línea neumática en brazo: 1 manguera de 8 mm, 6 bar
+--- FIN DOCUMENTO 2 ---
+
+--- DOCUMENTO 3: requisitos_seguridad.pdf ---
+REQUISITOS DE SEGURIDAD DE LA CELDA (ejemplo para prueba)
+1. La celda cuenta con cerramiento perimetral y puerta con enclavamiento.
+2. El gripper debe reportar al PLC la perdida de vacio en menos de 100 ms.
+3. Ante paro de emergencia el robot se detiene y el gripper conserva la pieza.
+4. La liberacion de la pieza solo se permite en posicion de deposito confirmada.
+5. Mangueras y cables deben ir guiados y protegidos contra enganche.
+--- FIN DOCUMENTO 3 ---

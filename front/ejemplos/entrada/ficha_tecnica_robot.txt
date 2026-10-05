@@ -1,0 +1,10 @@
+FICHA TÉCNICA — ROBOT DE CELDA (datos de ejemplo para prueba)
+
+Tipo: robot articulado de 6 ejes
+Carga útil nominal en muñeca: 20 kg
+Alcance máximo: 1650 mm
+Repetibilidad: +/- 0.05 mm
+Brida de montaje: ISO 9409-1-100-6-M8
+Aceleración máxima usada en la trayectoria: 5 m/s2
+Señales disponibles en muñeca: 8 entradas digitales, 8 salidas digitales, 24 V DC, 2 A máx.
+Línea neumática en brazo: 1 manguera de 8 mm, 6 bar
