@@ -5,6 +5,7 @@ from pathlib import Path
 
 from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
+from google.genai import types
 
 # --- GUARDRAIL DE COMPLETITUD ---
 # Cada tarea debe cerrar su informe con MARCA_FIN (se pide en tasks.yaml).
@@ -65,13 +66,25 @@ class VdiCrew:
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    # Gemini API: requiere GEMINI_API_KEY en el .env de la raiz del proyecto
+    # Gemini API: requiere GEMINI_API_KEY en el .env de la raiz del proyecto.
+    # CrewAI no pasa max_retries/timeout al cliente de Gemini; se configuran en http_options.
+    # Reintentos con espera exponencial (5, 10, 20, 40, 80, 120... s) ante 429/5xx,
+    # p. ej. "503 This model is currently experiencing high demand".
     llm = LLM(
         model="gemini/gemini-3.5-flash", # O la versión habilitada en tu API
         temperature=0.2,
         max_tokens=32000,                # Incluye tokens de razonamiento; con 4000 los informes se cortan
-        max_retries=4,                   # Límite de solicitudes por agente
-        timeout=600,                     # Tiempo máximo de espera por solicitud (s)
+        client_params={
+            "http_options": types.HttpOptions(
+                timeout=600_000,         # Tiempo máximo por solicitud (ms)
+                retry_options=types.HttpRetryOptions(
+                    attempts=8,
+                    initial_delay=5.0,
+                    max_delay=120.0,
+                    http_status_codes=[408, 429, 500, 502, 503, 504],
+                ),
+            )
+        },
     )
 
     # --- AGENTES VDI 2206 ---
