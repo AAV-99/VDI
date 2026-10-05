@@ -66,50 +66,48 @@ class VdiCrew:
     tasks_config = "config/tasks.yaml"
 
     # Gemini API: requiere GEMINI_API_KEY en el .env de la raiz del proyecto.
-    # CrewAI no pasa max_retries/timeout al cliente de Gemini; se configuran en http_options.
-    # Reintentos con espera exponencial (5, 10, 20, 40, 80, 120... s) ante 429/5xx,
-    # p. ej. "503 This model is currently experiencing high demand".
+    # CrewAI no pasa timeout al cliente de Gemini; se configura en http_options.
     llm = LLM(
-        model="gemini/gemini-3.6-flash", # O la versión habilitada en tu API
+        model="gemini/gemini-3.8-flash", # O la versión habilitada en tu API
         temperature=0.2,
-        max_tokens=32000,                # Incluye tokens de razonamiento; con 4000 los informes se cortan
-        client_params={
-            "http_options": types.HttpOptions(
-                timeout=600_000,         # Tiempo máximo por solicitud (ms)
-                retry_options=types.HttpRetryOptions(
-                    attempts=8,
-                    initial_delay=5.0,
-                    max_delay=120.0,
-                    http_status_codes=[408, 429, 500, 502, 503, 504],
-                ),
-            )
-        },
+        max_tokens=32000,                # Incluye tokens de razonamiento; con 4000 los informes se cortan        
+        max_retries=4,                    # Límite de solicitudes por agente
+        timeout=120,                      # Tiempo máximo de espera por solicitud
     )
 
     # --- AGENTES VDI 2206 ---
+    # Reintentos propios de CrewAI ante errores del LLM (p. ej. 503): maximo 3 por tarea.
+    def _agente(self, nombre: str) -> Agent:
+        return Agent(
+            config=self.agents_config[nombre],  # type: ignore[index]
+            llm=self.llm,
+            max_retry_limit=3,
+            verbose=True,
+        )
+
     @agent
     def team_lead(self) -> Agent:
-        return Agent(config=self.agents_config["team_lead"], llm=self.llm, verbose=True)
+        return self._agente("team_lead")
 
     @agent
     def mecanico(self) -> Agent:
-        return Agent(config=self.agents_config["mecanico"], llm=self.llm, verbose=True)
+        return self._agente("mecanico")
 
     @agent
     def electronico(self) -> Agent:
-        return Agent(config=self.agents_config["electronico"], llm=self.llm, verbose=True)
+        return self._agente("electronico")
 
     @agent
     def software(self) -> Agent:
-        return Agent(config=self.agents_config["software"], llm=self.llm, verbose=True)
+        return self._agente("software")
 
     @agent
     def mantenimiento(self) -> Agent:
-        return Agent(config=self.agents_config["mantenimiento"], llm=self.llm, verbose=True)
+        return self._agente("mantenimiento")
 
     @agent
     def cliente(self) -> Agent:
-        return Agent(config=self.agents_config["cliente"], llm=self.llm, verbose=True)
+        return self._agente("cliente")
 
     # --- TAREAS (output_file definido en tasks.yaml) ---
     def _tarea(self, nombre: str) -> Task:
@@ -153,5 +151,6 @@ class VdiCrew:
             agents=self.agents,
             tasks=self.tasks,
             process=Process.sequential,
+            max_rpm=4,                   # Por debajo del limite de 5 RPM del plan gratuito
             verbose=True,
         )
