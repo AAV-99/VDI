@@ -65,23 +65,14 @@ class VdiCrew:
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
 
-    llm = LLM(
-        model="ollama_chat/qwen3.8-vdi",   # qwen3.8 con num_ctx=65536 fijado en el servidor (Modelfile)
-        base_url="http://localhost:11434",
-        temperature=0.2,
-        max_retries=1,
-        timeout=10800,
-        #num_ctx=65536,
-    )
-
-    """     # Configuración del LLM con control de tokens
+    # Gemini API: requiere GEMINI_API_KEY en el .env de la raiz del proyecto
     llm = LLM(
         model="gemini/gemini-3.5-flash", # O la versión habilitada en tu API
         temperature=0.2,
-        max_tokens=4000,                  # Límite máximo de tokens por respuesta del agente
-        max_retries=4,                  # Límite de solicitudes por agente
-        timeout=120,               # Tiempo máximo de espera por solicitud
-    ) """
+        max_tokens=32000,                # Incluye tokens de razonamiento; con 4000 los informes se cortan
+        max_retries=4,                   # Límite de solicitudes por agente
+        timeout=600,                     # Tiempo máximo de espera por solicitud (s)
+    )
 
     # --- AGENTES VDI 2206 ---
     @agent

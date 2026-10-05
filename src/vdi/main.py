@@ -81,8 +81,8 @@ class VdiFlow(Flow[VdiState]):
 
 def _salida_inmediata(signum, frame):
     # Ctrl+C solo interrumpe el hilo principal; el crew corre en otro hilo del Flow
-    # y seguiria enviando peticiones a Ollama. os._exit termina todo el proceso.
-    print("\n[VDI] Interrumpido: cerrando proceso y conexiones a Ollama.", flush=True)
+    # y seguiria enviando peticiones al LLM. os._exit termina todo el proceso.
+    print("\n[VDI] Interrumpido: cerrando proceso y conexiones al LLM.", flush=True)
     os._exit(130)
 
 
