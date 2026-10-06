@@ -69,7 +69,7 @@ def guardrail_informe_completo(tarea: str):
 # Configuracion del LLM. Se guarda tal cual en corrida.json.
 LLM_CONFIG = {
     "model": "ollama_chat/qwen3.8-vdi",
-    "base_url": "http://localhost:11434",
+    "base_url": "http://" + os.environ.get("OLLAMA_HOST", "localhost:11434"),
     "temperature": 0.2,
     "max_retries": 1,
     "timeout": 21600,  # 6 h: las tareas finales tardan casi 3 h solo en leer el contexto y responder
