@@ -20,6 +20,10 @@ REGISTRO_GUARDRAIL = RUN_DIR / "_guardrail.log"
 # Unas 6 000 palabras equivalen a ~15 000 tokens generados (2,5 tokens por palabra).
 MAX_PALABRAS = 6000
 
+# Tope de tokens generados por respuesta, contando el razonamiento. Corta un razonamiento en bucle:
+# una tarea normal genera entre 9 000 y 15 000; a 57 tokens/s el tope se alcanza en unos 12 min.
+MAX_TOKENS_RESPUESTA = 40000
+
 
 def _registrar(tarea: str, estado: str, detalle: str, texto: str) -> None:
     try:
@@ -72,7 +76,8 @@ LLM_CONFIG = {
     "base_url": "http://" + os.environ.get("OLLAMA_HOST", "localhost:11434"),
     "temperature": 0.2,
     "max_retries": 1,
-    "timeout": 21600,  # 6 h: las tareas finales tardan casi 3 h solo en leer el contexto y responder
+    "max_tokens": MAX_TOKENS_RESPUESTA,
+    "timeout": 1800,  # 30 min: en Apolo la peticion mas larga de una corrida normal dura menos de 5 min
 }
 
 # Esfuerzo de razonamiento del modelo: low, medium, high o xhigh. Vacio = el que trae el modelo por defecto.
