@@ -75,6 +75,12 @@ LLM_CONFIG = {
     "timeout": 21600,  # 6 h: las tareas finales tardan casi 3 h solo en leer el contexto y responder
 }
 
+# Esfuerzo de razonamiento del modelo: low, medium, high o xhigh. Vacio = el que trae el modelo por defecto.
+# Se envia en extra_body porque CrewAI descarta reasoning_effort como argumento directo con Ollama.
+ESFUERZO_RAZONAMIENTO = os.environ.get("VDI_REASONING_EFFORT", "").strip()
+if ESFUERZO_RAZONAMIENTO:
+    LLM_CONFIG["extra_body"] = {"reasoning_effort": ESFUERZO_RAZONAMIENTO}
+
 
 @CrewBase
 class VdiCrew:
