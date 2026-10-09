@@ -1,0 +1,23 @@
+=== CONTEXTO DEL PROYECTO VDI 2206 ===
+Generado: 2026-10-08 20:25:03
+
+## TIPO DE SISTEMA
+Efector final (gripper) de vacío para manipulación de láminas de acero estampadas
+
+## ALCANCE DEL PROYECTO
+Diseñar un gripper de ventosas para un robot industrial de 6 ejes que toma láminas de acero estampadas (paneles de puerta) desde un rack de almacenamiento y las deposita en el dispositivo de soldadura de una celda de ensamble de carrocería. El gripper se integra con el robot mediante brida ISO 9409-1-100 y con el PLC de celda por señales digitales de 24 V. Incluye estructura, generación de vacío, sensórica de presencia de pieza y lógica de control. No incluye el robot, el rack ni el dispositivo de soldadura
+
+## REQUERIMIENTOS PRIMARIOS
+- Masa máxima de la pieza: 8 kg (lámina de acero de 0.8 mm, 1200 x 900 mm).
+- Masa máxima del gripper: 6 kg.
+- Tiempo de ciclo tomar-depositar: <= 12 s.
+- Factor de seguridad de sujeción: >= 2 con aceleración de 5 m/s2.
+- Alimentación eléctrica: 24 V DC. Aire comprimido disponible: 6 bar.
+- La pieza no debe caer ante pérdida de energía eléctrica.
+- Sin marcas ni deformaciones visibles en la superficie de la lámina.
+
+## COSTO OBJETIVO
+(no especificado)
+
+## CONTEXTO ADICIONAL
+La celda trabaja 2 turnos de 8 horas, 5 días por semana. Las láminas llegan con película de aceite de estampado. El mantenimiento preventivo se hace una vez por semana con ventana de 30 minutos. Presupuesto objetivo de materiales: 4.500 USD.

@@ -7,12 +7,16 @@ Flujo:
   3. Se ejecutan los agentes (simulados o reales).
   4. Se muestran los .md de output/ en pantalla.
 
-Ejecutar:  uv run streamlit run app.py
+Ejecutar (desde la raíz del repo, con el entorno virtual activado):
+  streamlit run front/app.py
 """
 from __future__ import annotations
 
 import io
+import os
+import re
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 
@@ -23,10 +27,16 @@ from mock_flow import DOSSIER_NAME, run_mock_flow
 ROOT = Path(__file__).resolve().parent
 INPUT_DIR = ROOT / "input"
 INPUT_FILE = INPUT_DIR / "project_context.txt"
-OUTPUT_DIR = ROOT / "output"
+MOCK_OUTPUT_DIR = ROOT / "output"
 
-# Comando del flujo real (ver README, paso 7)
-REAL_FLOW_CMD = ["uv", "run", "kickoff"]
+# --- Flujo real de CrewAI: vive en la raíz del repo (carpeta padre de front/) ---
+REPO_ROOT = ROOT.parent
+REAL_OUTPUT_DIR = REPO_ROOT / "output"  # ahí escriben los agentes (vdicrew.py)
+# Se usa el mismo Python que corre Streamlit: funciona igual con pip/venv o con uv
+REAL_FLOW_CMD = [sys.executable, "-m", "vdi.main"]
+ENV_FILE = REPO_ROOT / ".env"  # aquí va GEMINI_API_KEY
+CONTEXT_ENV_VAR = "VDI_CONTEXT_FILE"  # src/vdi/main.py lee el .txt desde esta variable
+REPORT_PATTERN = re.compile(r"^\d\d_.*\.md$")  # 00_..., 01_..., etc.
 
 ALLOWED_TYPES = ["txt", "md", "csv", "pdf", "docx"]
 
@@ -76,7 +86,7 @@ def extract_text(uploaded_file) -> str:
 # ----------------------------------------------------------------------------
 # Construcción del .txt de entrada para los agentes
 # ----------------------------------------------------------------------------
-def build_input_txt(system_type, scope, requirements, extra, documents) -> str:
+def build_input_txt(system_type, scope, requirements, cost, extra, documents) -> str:
     """documents: lista de tuplas (nombre, texto)."""
     lines = [
         "=== CONTEXTO DEL PROYECTO VDI 2206 ===",
@@ -90,6 +100,9 @@ def build_input_txt(system_type, scope, requirements, extra, documents) -> str:
         "",
         "## REQUERIMIENTOS PRIMARIOS",
         requirements.strip() or "(no especificados)",
+        "",
+        "## COSTO OBJETIVO",
+        cost.strip() or "(no especificado)",
         "",
         "## CONTEXTO ADICIONAL",
         extra.strip() or "(ninguno)",
@@ -107,16 +120,72 @@ def build_input_txt(system_type, scope, requirements, extra, documents) -> str:
     return "\n".join(lines)
 
 
-def run_real_flow() -> str:
-    """Lanza el flujo real de CrewAI y devuelve su salida de consola."""
+def report_files(output_dir: Path) -> list[Path]:
+    """Reportes de los agentes (00_..., 01_...) presentes en output_dir."""
+    return sorted(f for f in output_dir.glob("*.md") if REPORT_PATTERN.match(f.name))
+
+
+def archive_previous_outputs(output_dir: Path) -> None:
+    """Mueve los resultados de la corrida anterior a output/_anteriores/<fecha>/ (no los borra)."""
+    old_files = [f for f in output_dir.iterdir() if f.is_file()]
+    if not old_files:
+        print("[UI] No hay resultados anteriores que archivar")
+        return
+    dest = output_dir / "_anteriores" / f"{datetime.now():%Y%m%d_%H%M%S}"
+    dest.mkdir(parents=True, exist_ok=True)
+    for old in old_files:
+        old.replace(dest / old.name)
+    print(f"[UI] {len(old_files)} archivos de la corrida anterior movidos a {dest}")
+
+
+def run_real_flow(on_log=None) -> str:
+    """Lanza el flujo real de CrewAI desde la raíz del repo y devuelve su salida de consola.
+
+    on_log(texto): se llama con el log acumulado cada vez que llega una línea nueva.
+    """
+    env = os.environ.copy()
+    env[CONTEXT_ENV_VAR] = str(INPUT_FILE)
+    # CrewAI imprime emojis/cajas: sin esto, en Windows la salida redirigida falla con cp1252
+    env["PYTHONIOENCODING"] = "utf-8"
+    env["PYTHONUTF8"] = "1"
+    env["PYTHONUNBUFFERED"] = "1"
+    # El paquete vdi vive en src/: así no hace falta instalar el proyecto
+    env["PYTHONPATH"] = os.pathsep.join(filter(None, [str(REPO_ROOT / "src"), env.get("PYTHONPATH", "")]))
+    # Variables del .env de la raíz (no pisan las que ya estén definidas en la terminal)
+    if ENV_FILE.exists():
+        from dotenv import dotenv_values
+
+        for key, value in dotenv_values(ENV_FILE).items():
+            if value is not None:
+                env.setdefault(key, value)
+    else:
+        print(f"[UI] AVISO: no existe {ENV_FILE}")
+    print(f"[UI]    GEMINI_API_KEY definida: {bool(env.get('GEMINI_API_KEY') or env.get('GOOGLE_API_KEY'))}")
     print(f"[UI] Ejecutando flujo real: {' '.join(REAL_FLOW_CMD)}")
-    result = subprocess.run(
-        REAL_FLOW_CMD, cwd=ROOT, capture_output=True, text=True, encoding="utf-8", errors="replace"
+    print(f"[UI]    carpeta de trabajo: {REPO_ROOT}")
+    print(f"[UI]    {CONTEXT_ENV_VAR}={INPUT_FILE}")
+
+    process = subprocess.Popen(
+        REAL_FLOW_CMD,
+        cwd=REPO_ROOT,
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
     )
-    print(f"[UI] Flujo real terminó con código {result.returncode}")
-    log = (result.stdout or "") + "\n" + (result.stderr or "")
-    if result.returncode != 0:
-        raise RuntimeError(f"El flujo terminó con código {result.returncode}:\n{log[-3000:]}")
+    lines = []
+    for line in process.stdout:
+        print(line, end="")  # también queda en la terminal donde corre Streamlit
+        lines.append(line)
+        if on_log:
+            on_log("".join(lines))
+    returncode = process.wait()
+    print(f"[UI] Flujo real terminó con código {returncode}")
+    log = "".join(lines)
+    if returncode != 0:
+        raise RuntimeError(f"El flujo terminó con código {returncode}:\n{log[-3000:]}")
     return log
 
 
@@ -132,11 +201,26 @@ with st.sidebar:
     mode = st.radio(
         "Modo de ejecución",
         ["Simulación (mock)", "Agentes reales (CrewAI)"],
-        help="La simulación no consume cuota de Gemini.",
+        help="La simulación no llama al modelo: sirve para probar la interfaz.",
     )
+    OUTPUT_DIR = MOCK_OUTPUT_DIR if mode.startswith("Simulación") else REAL_OUTPUT_DIR
+    if not mode.startswith("Simulación"):
+        # Verificación previa: aquí no se instala nada, solo se avisa qué falta
+        import importlib.util
+
+        missing = [pkg for pkg in ("crewai", "google.genai", "dotenv") if importlib.util.find_spec(pkg) is None]
+        print(f"[UI] Python en uso: {sys.executable}")
+        print(f"[UI] Paquetes faltantes para el flujo real: {missing or 'ninguno'}")
+        if missing:
+            st.error(
+                "Faltan paquetes en este entorno: " + ", ".join(missing) + ". Instálalos antes de correr:\n\n"
+                '`pip install "crewai[google-genai,tools]>=1.15.17,<2.0.0"`'
+            )
+        if not ENV_FILE.exists():
+            st.error(f"No existe `{ENV_FILE.name}` en la raíz del proyecto con GEMINI_API_KEY.")
     st.divider()
-    st.markdown(f"**Input:** `{INPUT_FILE.relative_to(ROOT)}`")
-    st.markdown(f"**Output:** `{OUTPUT_DIR.relative_to(ROOT)}/`")
+    st.markdown(f"**Input:** `{INPUT_FILE.relative_to(REPO_ROOT)}`")
+    st.markdown(f"**Output:** `{OUTPUT_DIR.relative_to(REPO_ROOT)}/`")
 
 st.subheader("1. Contexto del problema")
 system_type = st.text_input(
@@ -152,6 +236,10 @@ requirements = st.text_area(
     "Requerimientos primarios",
     height=120,
     placeholder="Ej.: Masa <= 1.5 kg. Tiempo de ciclo <= 4.0 s. Alimentación 24V DC...",
+)
+cost = st.text_input(
+    "Costo objetivo",
+    placeholder="Ej.: Costo objetivo de fabricación <= 1000 USD",
 )
 extra = st.text_area(
     "Contexto adicional",
@@ -185,17 +273,22 @@ if st.button("🚀 Generar input y ejecutar agentes", type="primary"):
             st.warning(f"**{name}** no tiene texto extraíble (¿PDF escaneado?).")
 
     # --- 3.2 Escribir el .txt ---
-    input_txt = build_input_txt(system_type, scope, requirements, extra, documents)
+    input_txt = build_input_txt(system_type, scope, requirements, cost, extra, documents)
     INPUT_DIR.mkdir(parents=True, exist_ok=True)
     INPUT_FILE.write_text(input_txt, encoding="utf-8")
     print(f"[UI] Input escrito en {INPUT_FILE} ({len(input_txt)} caracteres, {len(documents)} adjuntos)")
     st.session_state["input_txt"] = input_txt
 
-    # --- 3.3 Limpiar resultados de la corrida anterior ---
+    # --- 3.3 Apartar resultados de la corrida anterior ---
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    for old in OUTPUT_DIR.glob("*.md"):
-        old.unlink()
-        print(f"[UI] Eliminado resultado anterior: {old.name}")
+    st.session_state["output_dir"] = str(OUTPUT_DIR)
+    st.session_state.pop("run_log", None)
+    if mode.startswith("Simulación"):
+        for old in OUTPUT_DIR.glob("*.md"):
+            old.unlink()
+            print(f"[UI] Eliminado resultado anterior: {old.name}")
+    else:
+        archive_previous_outputs(OUTPUT_DIR)  # una corrida real tarda: no se borra, se archiva
 
     # --- 3.4 Ejecutar agentes ---
     try:
@@ -208,8 +301,13 @@ if st.button("🚀 Generar input y ejecutar agentes", type="primary"):
             )
             progress.empty()
         else:
+            st.info("No cambies nada ni recargues la página mientras corre: eso interrumpe la vista (los agentes siguen y los resultados quedan en output/).")
             with st.spinner("Ejecutando agentes reales... esto puede tardar varios minutos."):
-                st.session_state["run_log"] = run_real_flow()
+                live_log = st.empty()
+                st.session_state["run_log"] = run_real_flow(
+                    on_log=lambda log: live_log.code(log[-3000:], language="text")
+                )
+                live_log.empty()
         st.session_state["run_ok"] = True
         st.success("Ejecución completada.")
     except Exception as exc:
@@ -234,24 +332,26 @@ if st.session_state.get("run_log"):
     with st.expander("🖥️ Log de consola de los agentes"):
         st.code(st.session_state["run_log"][-10000:], language="text")
 
-if st.session_state.get("run_ok"):
-    st.subheader("4. Resultados")
-    md_files = sorted(OUTPUT_DIR.glob("*.md"))
-    print(f"[UI] Archivos .md encontrados en output/: {[f.name for f in md_files]}")
+# Los resultados se leen directamente de la carpeta del modo elegido. Así se ven aunque
+# la página se haya recargado o la vista se haya interrumpido durante la corrida.
+results_dir = OUTPUT_DIR
+md_files = report_files(results_dir) if results_dir.exists() else []
+print(f"[UI] Reportes encontrados en {results_dir}: {[f.name for f in md_files]}")
 
-    if not md_files:
-        st.warning("La ejecución terminó pero no hay archivos .md en `output/`.")
-    else:
-        # El dossier (00_...) queda primero por orden alfabético
-        tabs = st.tabs(["📘 Dossier" if f.name == DOSSIER_NAME else f.stem for f in md_files])
-        for tab, md_file in zip(tabs, md_files):
-            with tab:
-                content = md_file.read_text(encoding="utf-8")
-                st.download_button(
-                    f"Descargar {md_file.name}",
-                    content,
-                    file_name=md_file.name,
-                    mime="text/markdown",
-                    key=f"dl_{md_file.name}",
-                )
-                st.markdown(content)
+if md_files:
+    st.subheader("4. Resultados")
+    last_change = datetime.fromtimestamp(max(f.stat().st_mtime for f in md_files))
+    st.caption(f"Carpeta `{results_dir.relative_to(REPO_ROOT)}/` · última actualización: {last_change:%Y-%m-%d %H:%M}")
+    # El dossier (00_...) queda primero por orden alfabético
+    tabs = st.tabs(["📘 Dossier" if f.name == DOSSIER_NAME else f.stem for f in md_files])
+    for tab, md_file in zip(tabs, md_files):
+        with tab:
+            content = md_file.read_text(encoding="utf-8")
+            st.download_button(
+                f"Descargar {md_file.name}",
+                content,
+                file_name=md_file.name,
+                mime="text/markdown",
+                key=f"dl_{md_file.name}",
+            )
+            st.markdown(content)

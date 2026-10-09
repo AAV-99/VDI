@@ -1,3 +1,4 @@
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -68,7 +69,8 @@ class VdiCrew:
     # Gemini API: requiere GEMINI_API_KEY en el .env de la raiz del proyecto.
     # CrewAI no pasa timeout al cliente de Gemini; se configura en http_options.
     llm = LLM(
-        model="gemini/gemini-3.8-flash", # O la versión habilitada en tu API
+        # Se puede cambiar sin tocar el código con VDI_LLM_MODEL en el .env
+        model=os.environ.get("VDI_LLM_MODEL") or "gemini-3.5-flash-lite",
         temperature=0.2,
         max_tokens=32000,                # Incluye tokens de razonamiento; con 4000 los informes se cortan        
         max_retries=4,                    # Límite de solicitudes por agente

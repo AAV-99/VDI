@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 import os
 import signal
+import time
 from pathlib import Path
 from pydantic import BaseModel
 from crewai.flow import Flow, listen, start
@@ -8,7 +9,20 @@ from crewai.flow import Flow, listen, start
 from .crews.vdicrew.vdicrew import VdiCrew
 
 # Contexto del proyecto (tipo de sistema, alcance, requerimientos, costo) que leen todos los agentes
-CONTEXTO_FILE = Path(__file__).resolve().parent / "contexto.txt"
+# La interfaz (front/app.py) define VDI_CONTEXT_FILE con la ruta del .txt que genera;
+# sin esa variable (ejecucion manual con `uv run kickoff`) se usa contexto.txt.
+# Reintentos de toda la corrida cuando Gemini responde "saturado" (503) o corta la conexion.
+# Los reintentos propios de CrewAI son inmediatos; aqui se espera antes de volver a intentar.
+ESPERAS_REINTENTO_S = [60, 120, 240]
+MARCAS_ERROR_TEMPORAL = ("503", "UNAVAILABLE", "high demand", "Server disconnected", "overloaded")
+
+
+def _es_error_temporal(error: Exception) -> bool:
+    texto = f"{type(error).__name__}: {error}"
+    return any(marca in texto for marca in MARCAS_ERROR_TEMPORAL)
+
+
+CONTEXTO_FILE = Path(os.environ.get("VDI_CONTEXT_FILE") or Path(__file__).resolve().parent / "contexto.txt")
 
 
 class VdiState(BaseModel):
@@ -27,6 +41,7 @@ class VdiFlow(Flow[VdiState]):
         else:
             self.state.contexto = CONTEXTO_FILE.read_text(encoding="utf-8").strip()
             print(f"Using context from {CONTEXTO_FILE}")
+            print(f"[VDI] Contexto cargado: {len(self.state.contexto)} caracteres")
 
         if not self.state.contexto:
             raise ValueError(f"El contexto del proyecto esta vacio: {CONTEXTO_FILE}")
@@ -34,7 +49,22 @@ class VdiFlow(Flow[VdiState]):
     @listen(load_context)
     def generate_design(self):
         print("Running multi-agent design review")
-        VdiCrew().crew().kickoff(inputs={"contexto": self.state.contexto})
+        print(f"[VDI] Modelo: {getattr(getattr(VdiCrew, 'llm', None), 'model', '(desconocido)')}")
+        for intento in range(len(ESPERAS_REINTENTO_S) + 1):
+            try:
+                VdiCrew().crew().kickoff(inputs={"contexto": self.state.contexto})
+                break
+            except Exception as error:
+                if not _es_error_temporal(error) or intento == len(ESPERAS_REINTENTO_S):
+                    print(f"[VDI] Error definitivo en el intento {intento + 1}: {type(error).__name__}")
+                    raise
+                espera = ESPERAS_REINTENTO_S[intento]
+                print(
+                    f"[VDI] El modelo esta saturado (intento {intento + 1} de "
+                    f"{len(ESPERAS_REINTENTO_S) + 1}). Reintento completo en {espera} s...",
+                    flush=True,
+                )
+                time.sleep(espera)
         print("VDI 2206 Design review completed. Reports saved to output/")
 
 
