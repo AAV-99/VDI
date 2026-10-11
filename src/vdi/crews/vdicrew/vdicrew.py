@@ -1,11 +1,13 @@
-import os
 import re
 from datetime import datetime
 from pathlib import Path
 
-from crewai import Agent, Crew, Process, Task, LLM
+from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from google.genai import types
+
+from .conocimiento import herramienta_rag
+from .modelos import crear_llm
 
 # --- GUARDRAIL DE COMPLETITUD ---
 # Cada tarea debe cerrar su informe con MARCA_FIN (se pide en tasks.yaml).
@@ -67,22 +69,20 @@ class VdiCrew:
     tasks_config = "config/tasks.yaml"
 
     # Gemini API: requiere GEMINI_API_KEY en el .env de la raiz del proyecto.
-    # CrewAI no pasa timeout al cliente de Gemini; se configura en http_options.
-    llm = LLM(
-        # Se puede cambiar sin tocar el código con VDI_LLM_MODEL en el .env
-        model=os.environ.get("VDI_LLM_MODEL") or "gemini-3.5-flash-lite",
+    # Empieza con el mejor modelo de la cadena (modelos.py) y baja al siguiente si responde 429 (cuota agotada).
+    llm = crear_llm(
         temperature=0.2,
-        max_tokens=32000,                # Incluye tokens de razonamiento; con 4000 los informes se cortan        
-        max_retries=4,                    # Límite de solicitudes por agente
-        timeout=120,                      # Tiempo máximo de espera por solicitud
+        max_tokens=32000,                # Incluye tokens de razonamiento; con 4000 los informes se cortan
     )
 
     # --- AGENTES VDI 2206 ---
     # Reintentos propios de CrewAI ante errores del LLM (p. ej. 503): maximo 3 por tarea.
-    def _agente(self, nombre: str) -> Agent:
+    # Los agentes de subsistemas consultan los manuales CRP con RAG (tools=[herramienta_rag()]).
+    def _agente(self, nombre: str, con_rag: bool = False) -> Agent:
         return Agent(
             config=self.agents_config[nombre],  # type: ignore[index]
             llm=self.llm,
+            tools=[herramienta_rag()] if con_rag else [],
             max_retry_limit=3,
             verbose=True,
         )
@@ -93,19 +93,19 @@ class VdiCrew:
 
     @agent
     def mecanico(self) -> Agent:
-        return self._agente("mecanico")
+        return self._agente("mecanico", con_rag=True)
 
     @agent
     def electronico(self) -> Agent:
-        return self._agente("electronico")
+        return self._agente("electronico", con_rag=True)
 
     @agent
     def software(self) -> Agent:
-        return self._agente("software")
+        return self._agente("software", con_rag=True)
 
     @agent
     def mantenimiento(self) -> Agent:
-        return self._agente("mantenimiento")
+        return self._agente("mantenimiento", con_rag=True)
 
     @agent
     def cliente(self) -> Agent:
