@@ -7,6 +7,7 @@ Framework basado en **CrewAI Flows** y modelos de lenguaje **Google Gemini** par
 ## 📑 Tabla de Contenidos
 
 - [Requisitos Previos](#requisitos-previos)
+- [Arquitectura del Sistema](#️-arquitectura-del-sistema)
 - [Estructura del Proyecto](#️-estructura-del-proyecto)
 - [Guía Paso a Paso (Windows)](#-guía-paso-a-paso)
 - [Configuración y Comportamiento de la Ejecución](#️-configuración-y-comportamiento-de-la-ejecución)
@@ -26,6 +27,65 @@ Framework basado en **CrewAI Flows** y modelos de lenguaje **Google Gemini** par
 - Python 3.12 (lo instala `uv` en el [paso 3](#3-instalar-uv-y-python-312); no hace falta instalarlo por separado)
 
 > ⚠️ **Cuota de Gemini:** el plan gratuito permite pocas solicitudes por día y por modelo (del orden de 20) y 5 por minuto. Una corrida completa hace al menos 7 solicitudes (una por tarea), más las consultas al RAG y los reintentos. Cuando un modelo agota su cuota, la corrida sigue con el siguiente (ver [Cambio de modelo ante cuota agotada](#cambio-de-modelo-ante-cuota-agotada-429)). Para probar la interfaz sin gastar cuota usa el modo **Simulación** de la [Interfaz Web](#️-interfaz-web-streamlit).
+
+---
+
+## 🏗️ Arquitectura del Sistema
+
+```mermaid
+flowchart TB
+    subgraph ENTRADA["1 · Entrada del contexto"]
+        direction LR
+        UI["Interfaz web Streamlit<br/>front/app.py"] --> CTXUI["front/input/project_context.txt<br/>formulario + texto de adjuntos"]
+        CTX["src/vdi/contexto.txt<br/>ejecución por terminal"]
+    end
+
+    subgraph FLOW["2 · CrewAI Flow · src/vdi/main.py"]
+        direction LR
+        LOAD["load_context<br/>lee el contexto"] --> GEN["generate_design<br/>ejecuta el crew<br/>reintenta la corrida ante 503"]
+    end
+
+    subgraph CREW["3 · VdiCrew · tareas en orden"]
+        direction LR
+        T1["Integración<br/>requerimientos"] --> T2["Mecánica"] --> T3["Electrónica"] --> T4["Software"] --> T5["Mantenimiento"] --> T6["Cliente"] --> T7["Integración<br/>dossier final"]
+    end
+
+    subgraph RAG["RAG · conocimiento.py"]
+        direction TB
+        TOOL["RagTool<br/>buscar_manuales_crp"] --> DB[(".rag_db/<br/>ChromaDB")]
+        DOCS["knowledge/<br/>manuales CRP en PDF"] -- "embeddings ONNX locales" --> DB
+    end
+
+    subgraph LLM["LLM · modelos.py"]
+        direction TB
+        RESP["GeminiConRespaldo<br/>ante 429 baja de modelo<br/>3.8-flash → 3.7 → 3.6 → ..."] --> API(["API de Google Gemini"])
+    end
+
+    GUARD{{"Guardrail<br/>informe completo<br/>hasta 2 reintentos"}}
+
+    subgraph SALIDA["4 · Salida · output/"]
+        direction LR
+        MD["00 a 06_*.md<br/>informes y dossier VDI 2206"]
+        LOG["_guardrail.log"]
+    end
+
+    ENTRADA -- "VDI_CONTEXT_FILE<br/>o contexto.txt" --> FLOW
+    FLOW --> CREW
+    CREW -. "Mecánica, Electrónica,<br/>Software y Mantenimiento" .-> RAG
+    CREW -- "cada solicitud" --> LLM
+    CREW -. "cada informe" .-> GUARD
+    CREW --> SALIDA
+    GUARD --> LOG
+```
+
+- **Entrada:** el contexto del proyecto llega desde la interfaz web (que también agrega el texto de los documentos adjuntos) o desde `src/vdi/contexto.txt` al ejecutar por terminal.
+- **Flow:** `main.py` carga el contexto y ejecuta el crew. Si Gemini está saturado (503), repite la corrida completa con esperas crecientes.
+- **Crew:** 7 tareas en orden; cada agente recibe los informes anteriores. Un guardrail revisa que cada informe esté completo.
+- **RAG:** los agentes de Mecánica, Electrónica, Software y Mantenimiento consultan los manuales de `knowledge/`. Los embeddings se calculan en local, sin gastar cuota de Gemini.
+- **LLM:** todas las solicitudes pasan por `GeminiConRespaldo`, que cambia de modelo cuando uno agota su cuota diaria.
+- **Salida:** los informes quedan en `output/` y la interfaz web los muestra en pestañas.
+
+El servidor MCP de Tavily (`test_mcp.py`) todavía no forma parte del flujo; ver [Búsqueda Web por MCP](#-búsqueda-web-por-mcp-tavily).
 
 ---
 
