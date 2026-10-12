@@ -214,7 +214,7 @@ with st.sidebar:
         if missing:
             st.error(
                 "Faltan paquetes en este entorno: " + ", ".join(missing) + ". Instálalos antes de correr:\n\n"
-                '`pip install "crewai[google-genai,tools]>=1.15.17,<2.0.0"`'
+                '`pip install "crewai[google-genai,tools]>=1.15.24,<2.0.0"`'
             )
         if not ENV_FILE.exists():
             st.error(f"No existe `{ENV_FILE.name}` en la raíz del proyecto con GEMINI_API_KEY.")
