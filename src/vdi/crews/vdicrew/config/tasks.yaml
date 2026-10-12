@@ -27,6 +27,14 @@ mechanical_subsystem_design_task:
     detallando qué mecanismos, sistemas de sujeción, transmisión o disipación se utilizarán. Generar una tabla de BOM
     Preliminar Mecánico especificando materiales (aleaciones, polímeros, compuestos) y componentes comerciales principales.
 
+    BÚSQUEDA WEB OBLIGATORIA: ANTES de redactar el informe DEBES llamar a la herramienta de búsqueda web (tavily_search)
+    entre 2 y 4 veces, una por cada componente comercial crítico del BOM, para encontrar modelos reales: fabricante,
+    referencia, masa, material y precio aproximado. Agrega al BOM una columna "Fuente". Para cada componente que
+    buscaste, usa en el BOM el fabricante y la referencia del producto real que apareció en los resultados (ajusta tu
+    selección a ese producto) y pon en "Fuente" la URL exacta de ese resultado; sirve la página de un distribuidor.
+    El BOM DEBE tener al menos 2 filas con URL. Solo en los componentes que no buscaste escribe "Sin fuente verificada".
+    NUNCA inventes una URL ni uses la página de inicio de un fabricante.
+
     REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.
 
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -44,6 +52,14 @@ electronic_subsystem_design_task:
     TAREA: Desarrollar la propuesta conceptual del subsistema electrónico, hardware y control para el sistema descrito
     en el contexto. Explicar la arquitectura de instrumentación, sensores, actuadores, etapas de potencia y comunicación
     para responder a los requerimientos primarios. Construir una tabla de BOM Preliminar Electrónico de componentes comerciales.
+
+    BÚSQUEDA WEB OBLIGATORIA: ANTES de redactar el informe DEBES llamar a la herramienta de búsqueda web (tavily_search)
+    entre 2 y 4 veces, una por cada componente comercial crítico del BOM, para encontrar modelos reales: fabricante,
+    referencia, voltaje, consumo y precio aproximado. Agrega al BOM una columna "Fuente". Para cada componente que
+    buscaste, usa en el BOM el fabricante y la referencia del producto real que apareció en los resultados (ajusta tu
+    selección a ese producto) y pon en "Fuente" la URL exacta de ese resultado; sirve la página de un distribuidor.
+    El BOM DEBE tener al menos 2 filas con URL. Solo en los componentes que no buscaste escribe "Sin fuente verificada".
+    NUNCA inventes una URL ni uses la página de inicio de un fabricante.
 
     REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.
 

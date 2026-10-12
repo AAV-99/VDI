@@ -1,23 +1,23 @@
 === CONTEXTO DEL PROYECTO VDI 2206 ===
-Generado: 2026-10-08 20:25:03
+Generado: 2026-10-10 15:40:04
 
 ## TIPO DE SISTEMA
-Efector final (gripper) de vacío para manipulación de láminas de acero estampadas
+Nodo IoT de monitoreo de condición (vibración y temperatura) para motores eléctricos de una línea de transportadores
 
 ## ALCANCE DEL PROYECTO
-Diseñar un gripper de ventosas para un robot industrial de 6 ejes que toma láminas de acero estampadas (paneles de puerta) desde un rack de almacenamiento y las deposita en el dispositivo de soldadura de una celda de ensamble de carrocería. El gripper se integra con el robot mediante brida ISO 9409-1-100 y con el PLC de celda por señales digitales de 24 V. Incluye estructura, generación de vacío, sensórica de presencia de pieza y lógica de control. No incluye el robot, el rack ni el dispositivo de soldadura
+Diseñar un nodo inalámbrico que se fija a la carcasa de motores eléctricos trifásicos de 5 a 30 kW en una línea de transportadores, mide vibración en 3 ejes y temperatura superficial, procesa los datos en el borde y envía indicadores de salud a un servidor de planta por Wi-Fi mediante MQTT. Incluye carcasa, sistema de fijación al motor, electrónica de sensado, alimentación, firmware y un tablero básico de alertas. No incluye el servidor de planta, la red Wi-Fi ni la intervención sobre el motor.
 
 ## REQUERIMIENTOS PRIMARIOS
-- Masa máxima de la pieza: 8 kg (lámina de acero de 0.8 mm, 1200 x 900 mm).
-- Masa máxima del gripper: 6 kg.
-- Tiempo de ciclo tomar-depositar: <= 12 s.
-- Factor de seguridad de sujeción: >= 2 con aceleración de 5 m/s2.
-- Alimentación eléctrica: 24 V DC. Aire comprimido disponible: 6 bar.
-- La pieza no debe caer ante pérdida de energía eléctrica.
-- Sin marcas ni deformaciones visibles en la superficie de la lámina.
+- Medición de vibración triaxial: rango ±16 g, ancho de banda mínimo 1 kHz.
+- Medición de temperatura superficial: 0 a 120 °C, exactitud ±1 °C.
+- Autonomía con batería: mínimo 12 meses enviando un reporte cada 10 minutos.
+- Grado de protección de la carcasa: IP66. Temperatura ambiente de operación: -10 a 60 °C.
+- Fijación al motor sin perforar la carcasa (base magnética o adhesivo estructural).
+- Masa máxima del nodo: 250 g. Dimensiones máximas: 80 x 60 x 40 mm.
+- Alerta al servidor en menos de 5 s cuando la vibración supere el umbral de la norma ISO 10816-3.
 
 ## COSTO OBJETIVO
-(no especificado)
+120 USD por nodo en materiales, para un lote de 50 unidades
 
 ## CONTEXTO ADICIONAL
-La celda trabaja 2 turnos de 8 horas, 5 días por semana. Las láminas llegan con película de aceite de estampado. El mantenimiento preventivo se hace una vez por semana con ventana de 30 minutos. Presupuesto objetivo de materiales: 4.500 USD.
+La planta tiene 50 motores en la línea y hoy mide vibración con un equipo portátil una vez al mes. El ambiente tiene polvo metálico y salpicaduras de refrigerante. La cobertura Wi-Fi es de 2.4 GHz y es irregular en algunos puntos de la línea. El personal de mantenimiento cambia baterías solo en la parada anual de planta.
