@@ -15,6 +15,7 @@ from __future__ import annotations
 import io
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -23,6 +24,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from mermaid_render import render_markdown_with_mermaid
 from mock_flow import DOSSIER_NAME, run_mock_flow
 
 ROOT = Path(__file__).resolve().parent
@@ -36,6 +38,7 @@ REAL_OUTPUT_DIR = REPO_ROOT / "output"  # ahí escriben los agentes (vdicrew.py)
 # Se usa el mismo Python que corre Streamlit: funciona igual con pip/venv o con uv
 REAL_FLOW_CMD = [sys.executable, "-m", "vdi.main"]
 CONSOLE_LOG = REAL_OUTPUT_DIR / "_consola.log"  # salida completa de la corrida real
+PID_FILE = REAL_OUTPUT_DIR / "_corrida.pid"  # PID de la corrida real en curso (se borra al terminar)
 ENV_FILE = REPO_ROOT / ".env"  # aquí va GEMINI_API_KEY
 CONTEXT_ENV_VAR = "VDI_CONTEXT_FILE"  # src/vdi/main.py lee el .txt desde esta variable
 REPORT_PATTERN = re.compile(r"^\d\d_.*\.md$")  # 00_..., 01_..., etc.
@@ -127,17 +130,117 @@ def report_files(output_dir: Path) -> list[Path]:
     return sorted(f for f in output_dir.glob("*.md") if REPORT_PATTERN.match(f.name))
 
 
+def _move_with_retry(src: Path, dst: Path, attempts: int = 5, wait: float = 0.6) -> str:
+    """Mueve src a dst. Si Windows/OneDrive lo tiene bloqueado, reintenta y al final lo copia.
+
+    Devuelve "movido", "copiado" o "omitido". Nunca lanza excepción.
+    """
+    for intento in range(1, attempts + 1):
+        try:
+            src.replace(dst)
+            return "movido"
+        except PermissionError as exc:
+            print(f"[UI]    {src.name} bloqueado (intento {intento}/{attempts}): {exc.strerror}")
+            time.sleep(wait)
+        except OSError as exc:
+            print(f"[UI]    {src.name}: error al mover ({exc}); se intenta copiar")
+            break
+    try:
+        shutil.copy2(src, dst)  # copiar sí se permite aunque el archivo esté abierto
+        return "copiado"
+    except OSError as exc:
+        print(f"[UI]    {src.name}: tampoco se pudo copiar ({exc}); se deja donde está")
+        return "omitido"
+
+
 def archive_previous_outputs(output_dir: Path) -> None:
     """Mueve los resultados de la corrida anterior a output/_anteriores/<fecha>/ (no los borra)."""
-    old_files = [f for f in output_dir.iterdir() if f.is_file()]
+    old_files = [f for f in output_dir.iterdir() if f.is_file() and f.name != PID_FILE.name]
     if not old_files:
         print("[UI] No hay resultados anteriores que archivar")
         return
     dest = output_dir / "_anteriores" / f"{datetime.now():%Y%m%d_%H%M%S}"
     dest.mkdir(parents=True, exist_ok=True)
+    resumen = {"movido": 0, "copiado": 0, "omitido": 0}
     for old in old_files:
-        old.replace(dest / old.name)
-    print(f"[UI] {len(old_files)} archivos de la corrida anterior movidos a {dest}")
+        resultado = _move_with_retry(old, dest / old.name)
+        resumen[resultado] += 1
+        if resultado != "movido":
+            print(f"[UI]    {old.name}: {resultado}")
+    print(f"[UI] Archivado en {dest}: {resumen}")
+    if resumen["copiado"] or resumen["omitido"]:
+        # Los que quedaron bloqueados se borran si se puede, para que no se mezclen con la corrida nueva
+        for old in old_files:
+            if old.exists():
+                try:
+                    old.unlink()
+                except OSError:
+                    print(f"[UI]    {old.name} sigue bloqueado; se sobrescribirá en la corrida nueva")
+
+
+def _pid_alive(pid: int) -> bool:
+    """True si el proceso sigue vivo. En Windows NO se usa os.kill(pid, 0): eso lo mataría."""
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+
+        PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+        STILL_ACTIVE = 259
+        kernel32 = ctypes.windll.kernel32
+        handle = kernel32.OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, False, pid)
+        if not handle:
+            return False
+        try:
+            code = ctypes.c_ulong()
+            ok = kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
+            return bool(ok) and code.value == STILL_ACTIVE
+        finally:
+            kernel32.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
+
+
+def running_flow_pid() -> int | None:
+    """PID de una corrida real que siga en curso (p. ej. tras recargar la página), o None."""
+    if not PID_FILE.exists():
+        return None
+    try:
+        pid = int(PID_FILE.read_text(encoding="utf-8").strip())
+    except (ValueError, OSError):
+        pid = 0
+    if _pid_alive(pid):
+        print(f"[UI] Hay una corrida real en curso con PID {pid}")
+        return pid
+    print(f"[UI] PID {pid} ya no está activo: se limpia {PID_FILE.name}")
+    try:
+        PID_FILE.unlink()
+    except OSError:
+        pass
+    return None
+
+
+def stop_flow(pid: int) -> None:
+    """Detiene la corrida (y sus subprocesos, p. ej. el servidor MCP)."""
+    print(f"[UI] Deteniendo corrida con PID {pid}")
+    if os.name == "nt":
+        r = subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, text=True)
+        print(f"[UI]    taskkill: {(r.stdout or r.stderr).strip()}")
+    else:
+        import signal
+
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except OSError as exc:
+            print(f"[UI]    no se pudo detener: {exc}")
+    time.sleep(1.5)  # Windows tarda un momento en liberar los archivos
+    try:
+        PID_FILE.unlink()
+    except OSError:
+        pass
 
 
 def run_real_flow(on_log=None) -> str:
@@ -172,7 +275,15 @@ def run_real_flow(on_log=None) -> str:
     # (así se quedaban sin escribir los últimos reportes). Con el archivo, los agentes siguen
     # aunque la vista se interrumpa, y la consola completa queda en output/_consola.log.
     CONSOLE_LOG.parent.mkdir(parents=True, exist_ok=True)
-    with open(CONSOLE_LOG, "w", encoding="utf-8") as salida:
+    console_log = CONSOLE_LOG
+    try:
+        salida = open(console_log, "w", encoding="utf-8")
+    except PermissionError:
+        # _consola.log bloqueado (OneDrive u otro proceso): se usa un nombre con fecha
+        console_log = CONSOLE_LOG.with_name(f"_consola_{datetime.now():%Y%m%d_%H%M%S}.log")
+        print(f"[UI]    {CONSOLE_LOG.name} bloqueado; se usa {console_log.name}")
+        salida = open(console_log, "w", encoding="utf-8")
+    with salida:
         process = subprocess.Popen(
             REAL_FLOW_CMD,
             cwd=REPO_ROOT,
@@ -180,9 +291,11 @@ def run_real_flow(on_log=None) -> str:
             stdout=salida,
             stderr=subprocess.STDOUT,
         )
-    print(f"[UI]    consola completa en {CONSOLE_LOG}")
+    PID_FILE.write_text(str(process.pid), encoding="utf-8")
+    print(f"[UI]    PID de la corrida: {process.pid} (guardado en {PID_FILE.name})")
+    print(f"[UI]    consola completa en {console_log}")
     lines = []
-    with open(CONSOLE_LOG, encoding="utf-8", errors="replace") as lector:
+    with open(console_log, encoding="utf-8", errors="replace") as lector:
         while True:
             fragmento = lector.read()
             if fragmento:
@@ -195,6 +308,10 @@ def run_real_flow(on_log=None) -> str:
             else:
                 time.sleep(0.5)
     returncode = process.wait()
+    try:
+        PID_FILE.unlink()
+    except OSError:
+        pass
     print(f"[UI] Flujo real terminó con código {returncode}")
     log = "".join(lines)
     if returncode != 0:
@@ -268,7 +385,17 @@ uploads = st.file_uploader(
 )
 
 st.subheader("3. Ejecutar")
-if st.button("Generar input y ejecutar agentes", type="primary"):
+busy_pid = None if mode.startswith("Simulación") else running_flow_pid()
+if busy_pid:
+    st.warning(
+        f"Hay una corrida de agentes todavía en curso (PID {busy_pid}), probablemente porque la página se "
+        "recargó o el computador se bloqueó mientras corría. Sus resultados siguen llegando a `output/`. "
+        "Espera a que termine (recarga la página en unos minutos) o detenla para lanzar una nueva."
+    )
+    if st.button("⏹️ Detener la corrida en curso"):
+        stop_flow(busy_pid)
+        st.rerun()
+if st.button("Generar input y ejecutar agentes", type="primary", disabled=bool(busy_pid)):
     if not system_type.strip() or not scope.strip():
         st.error("Completa al menos el tipo de sistema y el alcance del proyecto.")
         st.stop()
@@ -367,4 +494,5 @@ if md_files:
                 mime="text/markdown",
                 key=f"dl_{md_file.name}",
             )
-            st.markdown(content)
+            # Los diagramas Mermaid se sanean, se validan y, si aun así fallan, se muestran como texto
+            render_markdown_with_mermaid(content)

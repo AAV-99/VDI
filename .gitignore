@@ -2,5 +2,8 @@
 __pycache__/
 lib/
 .DS_Store
-output/
+# Se versionan los reportes de output/ (asi el Streamlit muestra la ultima corrida tras un pull);
+# los registros y las corridas archivadas se quedan en cada computador.
+output/_anteriores/
+output/*.log
 .rag_db/

@@ -8,7 +8,7 @@ requirements_ingestion_task:
     contexto. Establecer los límites del sistema mecatrónico o IoT bajo la metodología VDI 2206 y formular la matriz
     inicial de requerimientos funcionales y restricciones.
 
-    REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art.
+    REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art. SINTAXIS MERMAID OBLIGATORIA: escribe SIEMPRE entre comillas dobles las etiquetas de nodos y de flechas, por ejemplo A["Sensor (I2C)"] y A -->|"Datos (raw)"| B; los IDs de nodo van sin tildes, espacios ni símbolos; nunca uses comillas dobles dentro de una etiqueta.
 
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
@@ -35,7 +35,7 @@ mechanical_subsystem_design_task:
     El BOM DEBE tener al menos 2 filas con URL. Solo en los componentes que no buscaste escribe "Sin fuente verificada".
     NUNCA inventes una URL ni uses la página de inicio de un fabricante.
 
-    REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.
+    REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art. SINTAXIS MERMAID OBLIGATORIA: escribe SIEMPRE entre comillas dobles las etiquetas de nodos y de flechas, por ejemplo A["Sensor (I2C)"] y A -->|"Datos (raw)"| B; los IDs de nodo van sin tildes, espacios ni símbolos; nunca uses comillas dobles dentro de una etiqueta.
 
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
@@ -61,7 +61,7 @@ electronic_subsystem_design_task:
     El BOM DEBE tener al menos 2 filas con URL. Solo en los componentes que no buscaste escribe "Sin fuente verificada".
     NUNCA inventes una URL ni uses la página de inicio de un fabricante.
 
-    REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.
+    REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas. SINTAXIS MERMAID OBLIGATORIA: escribe SIEMPRE entre comillas dobles las etiquetas de nodos y de flechas, por ejemplo A["Sensor (I2C)"] y A -->|"Datos (raw)"| B; los IDs de nodo van sin tildes, espacios ni símbolos; nunca uses comillas dobles dentro de una etiqueta.
 
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
@@ -79,7 +79,7 @@ software_subsystem_design_task:
     contexto. Explicar la organización modular (procesamiento en el borde, tiempo real, capas de red, HMI/Cloud según
     aplique) necesaria para los requerimientos primarios. Proponer el stack de tecnologías, plataformas y herramientas sugeridas.
 
-    REGLA DE FORMATO: Modulos, capas de firmware y máquinas de estado deben diagramarse mediante sintaxis Mermaid (```mermaid) o tablas de transición de estado. NO INCLUIR NINGÚN BLOQUE DE CÓDIGO NI ASCII ART.
+    REGLA DE FORMATO: Modulos, capas de firmware y máquinas de estado deben diagramarse mediante sintaxis Mermaid (```mermaid) o tablas de transición de estado. NO INCLUIR NINGÚN BLOQUE DE CÓDIGO NI ASCII ART. SINTAXIS MERMAID OBLIGATORIA: escribe SIEMPRE entre comillas dobles las etiquetas de nodos y de flechas, por ejemplo A["Sensor (I2C)"] y A -->|"Datos (raw)"| B; los IDs de nodo van sin tildes, espacios ni símbolos; nunca uses comillas dobles dentro de una etiqueta.
 
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
@@ -97,7 +97,7 @@ maintenance_rams_eval_task:
     contexto, en el marco de su alcance. Definir la modularidad para reemplazo rápido de piezas y proponer la estrategia
     de diagnóstico o monitoreo de condición (PHM).
 
-    REGLA DE FORMATO: Presenta matrices de riesgo, estimaciones RAMS y estrategias PHM en tablas cuantitativas claras y diagramas de flujo en sintaxis Mermaid (```mermaid).
+    REGLA DE FORMATO: Presenta matrices de riesgo, estimaciones RAMS y estrategias PHM en tablas cuantitativas claras y diagramas de flujo en sintaxis Mermaid (```mermaid). SINTAXIS MERMAID OBLIGATORIA: escribe SIEMPRE entre comillas dobles las etiquetas de nodos y de flechas, por ejemplo A["Sensor (I2C)"] y A -->|"Datos (raw)"| B; los IDs de nodo van sin tildes, espacios ni símbolos; nunca uses comillas dobles dentro de una etiqueta.
 
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
@@ -133,7 +133,7 @@ design_board_integration_task:
     final para el sistema descrito en el contexto. Resolver conflictos entre dominios, articular la integración VDI 2206,
     calcular la puntuación ponderada global del diseño y verificar el cumplimiento del costo objetivo.
 
-    REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.
+    REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio. SINTAXIS MERMAID OBLIGATORIA: escribe SIEMPRE entre comillas dobles las etiquetas de nodos y de flechas, por ejemplo A["Sensor (I2C)"] y A -->|"Datos (raw)"| B; los IDs de nodo van sin tildes, espacios ni símbolos; nunca uses comillas dobles dentro de una etiqueta.
 
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
