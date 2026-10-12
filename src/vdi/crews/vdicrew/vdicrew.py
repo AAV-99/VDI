@@ -30,6 +30,7 @@ TAVILY_MCP_URL = "https://mcp.tavily.com/mcp/"
 HERRAMIENTAS_TAVILY = ["tavily_search", "tavily_extract"]
 AGENTES_CON_BUSQUEDA_WEB = {"mecanico", "electronico"}
 TAREAS_CON_BUSQUEDA_WEB = {"mechanical_subsystem_design_task", "electronic_subsystem_design_task"}
+MAX_BUSQUEDAS_POR_TAREA = 4  # tope duro: despues la herramienta ya no busca y pide redactar el informe
 
 # Evidencia de uso del MCP: cada conexion y cada busqueda queda en output/_mcp.log
 # y en la consola con el prefijo [MCP].
@@ -74,6 +75,30 @@ try:
     MCPClient.disconnect = _disconnect_tolerante
 except Exception as error:  # si CrewAI cambia su estructura interna, se sigue sin el parche
     print(f"[MCP] No se pudo aplicar el parche de desconexion: {error}", flush=True)
+
+
+# --- TOPE DE BUSQUEDAS POR TAREA ---
+# El modelo puede quedarse buscando sin redactar nunca el informe (gasta creditos de Tavily y
+# solicitudes de Gemini). Al llegar a MAX_BUSQUEDAS_POR_TAREA, la herramienta ya no consulta a
+# Tavily: le responde al agente que redacte con lo que tiene.
+try:
+    from crewai.tools.mcp_native_tool import MCPNativeTool
+
+    _run_async_original = MCPNativeTool._run_async
+
+    async def _run_async_con_tope(self, **kwargs):
+        if _busquedas["tarea_actual"] >= MAX_BUSQUEDAS_POR_TAREA:
+            _registrar_mcp("LIMITE_BUSQUEDAS", f"bloqueada: {_resumen(kwargs.get('query') or kwargs)}")
+            return (
+                f"LIMITE ALCANZADO: ya hiciste {MAX_BUSQUEDAS_POR_TAREA} busquedas en esta tarea. NO busques mas. "
+                "Redacta AHORA el informe completo con los resultados que ya obtuviste y pon sus URL "
+                "exactas en la columna Fuente del BOM."
+            )
+        return await _run_async_original(self, **kwargs)
+
+    MCPNativeTool._run_async = _run_async_con_tope
+except Exception as error:
+    print(f"[MCP] No se pudo aplicar el tope de busquedas: {error}", flush=True)
 
 
 @crewai_event_bus.on(MCPConnectionCompletedEvent)
@@ -298,6 +323,9 @@ class VdiCrew:
 
     @crew
     def crew(self) -> Crew:
+        # Si main.py reintenta la corrida completa, los contadores de busqueda arrancan de cero
+        _busquedas["tarea_actual"] = 0
+        _urls_tarea.clear()
         return Crew(
             agents=self.agents,
             tasks=self.tasks,

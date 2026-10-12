@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 
@@ -34,6 +35,7 @@ REPO_ROOT = ROOT.parent
 REAL_OUTPUT_DIR = REPO_ROOT / "output"  # ahí escriben los agentes (vdicrew.py)
 # Se usa el mismo Python que corre Streamlit: funciona igual con pip/venv o con uv
 REAL_FLOW_CMD = [sys.executable, "-m", "vdi.main"]
+CONSOLE_LOG = REAL_OUTPUT_DIR / "_consola.log"  # salida completa de la corrida real
 ENV_FILE = REPO_ROOT / ".env"  # aquí va GEMINI_API_KEY
 CONTEXT_ENV_VAR = "VDI_CONTEXT_FILE"  # src/vdi/main.py lee el .txt desde esta variable
 REPORT_PATTERN = re.compile(r"^\d\d_.*\.md$")  # 00_..., 01_..., etc.
@@ -165,22 +167,33 @@ def run_real_flow(on_log=None) -> str:
     print(f"[UI]    carpeta de trabajo: {REPO_ROOT}")
     print(f"[UI]    {CONTEXT_ENV_VAR}={INPUT_FILE}")
 
-    process = subprocess.Popen(
-        REAL_FLOW_CMD,
-        cwd=REPO_ROOT,
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
+    # La salida va a un ARCHIVO y no a un PIPE. Con PIPE, si Streamlit recarga la página a mitad
+    # de la corrida, nadie vuelve a leer el PIPE, su buffer se llena y el flujo se congela sin error
+    # (así se quedaban sin escribir los últimos reportes). Con el archivo, los agentes siguen
+    # aunque la vista se interrumpa, y la consola completa queda en output/_consola.log.
+    CONSOLE_LOG.parent.mkdir(parents=True, exist_ok=True)
+    with open(CONSOLE_LOG, "w", encoding="utf-8") as salida:
+        process = subprocess.Popen(
+            REAL_FLOW_CMD,
+            cwd=REPO_ROOT,
+            env=env,
+            stdout=salida,
+            stderr=subprocess.STDOUT,
+        )
+    print(f"[UI]    consola completa en {CONSOLE_LOG}")
     lines = []
-    for line in process.stdout:
-        print(line, end="")  # también queda en la terminal donde corre Streamlit
-        lines.append(line)
-        if on_log:
-            on_log("".join(lines))
+    with open(CONSOLE_LOG, encoding="utf-8", errors="replace") as lector:
+        while True:
+            fragmento = lector.read()
+            if fragmento:
+                print(fragmento, end="", flush=True)  # también queda en la terminal donde corre Streamlit
+                lines.append(fragmento)
+                if on_log:
+                    on_log("".join(lines))
+            elif process.poll() is not None:
+                break
+            else:
+                time.sleep(0.5)
     returncode = process.wait()
     print(f"[UI] Flujo real terminó con código {returncode}")
     log = "".join(lines)
@@ -255,7 +268,7 @@ uploads = st.file_uploader(
 )
 
 st.subheader("3. Ejecutar")
-if st.button("🚀 Generar input y ejecutar agentes", type="primary"):
+if st.button("Generar input y ejecutar agentes", type="primary"):
     if not system_type.strip() or not scope.strip():
         st.error("Completa al menos el tipo de sistema y el alcance del proyecto.")
         st.stop()
@@ -301,7 +314,7 @@ if st.button("🚀 Generar input y ejecutar agentes", type="primary"):
             )
             progress.empty()
         else:
-            st.info("No cambies nada ni recargues la página mientras corre: eso interrumpe la vista (los agentes siguen y los resultados quedan en output/).")
+            st.info("No cambies nada ni recargues la página mientras corre: eso interrumpe la vista. Los agentes siguen corriendo; los resultados quedan en output/ y la consola completa en output/_consola.log.")
             with st.spinner("Ejecutando agentes reales... esto puede tardar varios minutos."):
                 live_log = st.empty()
                 st.session_state["run_log"] = run_real_flow(

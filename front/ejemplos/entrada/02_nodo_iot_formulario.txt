@@ -1,0 +1,23 @@
+EJEMPLO 2 - NODO IoT DE MONITOREO DE CONDICION
+Copiar cada bloque en el campo del formulario con el mismo nombre.
+
+=== TIPO DE SISTEMA ===
+Nodo IoT de monitoreo de condición (vibración y temperatura) para motores eléctricos de una línea de transportadores
+
+=== ALCANCE DEL PROYECTO ===
+Diseñar un nodo inalámbrico que se fija a la carcasa de motores eléctricos trifásicos de 5 a 30 kW en una línea de transportadores, mide vibración en 3 ejes y temperatura superficial, procesa los datos en el borde y envía indicadores de salud a un servidor de planta por Wi-Fi mediante MQTT. Incluye carcasa, sistema de fijación al motor, electrónica de sensado, alimentación, firmware y un tablero básico de alertas. No incluye el servidor de planta, la red Wi-Fi ni la intervención sobre el motor.
+
+=== REQUERIMIENTOS PRIMARIOS ===
+- Medición de vibración triaxial: rango ±16 g, ancho de banda mínimo 1 kHz.
+- Medición de temperatura superficial: 0 a 120 °C, exactitud ±1 °C.
+- Autonomía con batería: mínimo 12 meses enviando un reporte cada 10 minutos.
+- Grado de protección de la carcasa: IP66. Temperatura ambiente de operación: -10 a 60 °C.
+- Fijación al motor sin perforar la carcasa (base magnética o adhesivo estructural).
+- Masa máxima del nodo: 250 g. Dimensiones máximas: 80 x 60 x 40 mm.
+- Alerta al servidor en menos de 5 s cuando la vibración supere el umbral de la norma ISO 10816-3.
+
+=== COSTO OBJETIVO ===
+120 USD por nodo en materiales, para un lote de 50 unidades
+
+=== CONTEXTO ADICIONAL ===
+La planta tiene 50 motores en la línea y hoy mide vibración con un equipo portátil una vez al mes. El ambiente tiene polvo metálico y salpicaduras de refrigerante. La cobertura Wi-Fi es de 2.4 GHz y es irregular en algunos puntos de la línea. El personal de mantenimiento cambia baterías solo en la parada anual de planta.
