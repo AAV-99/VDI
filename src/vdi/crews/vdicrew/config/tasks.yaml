@@ -73,11 +73,22 @@ client_acceptance_review_task:
 design_board_integration_task:
   description: >
     Sintetizar y consolidar las entregas de todas las disciplinas en el Dossier de Diseño Conceptual VDI 2206
-    final para {system_type}. Resolver conflictos entre dominios, articular la integración VDI 2206 y calcular la puntuación ponderada global 
-    del diseño, además de verificar el cumplimiento del presupuesto {target_cost}.
+    final para {system_type}. Resolver los conflictos entre dominios, registrar el estado de cada solicitud de cambio (ECR) del cliente,
+    articular la integración VDI 2206 y calcular la puntuación ponderada global del diseño, además de verificar el cumplimiento del presupuesto {target_cost}.
+    REGLA DE INTEGRACIÓN: Corrige los errores e inconsistencias que encuentres y toma las decisiones de diseño necesarias para entregar un
+    concepto completo y coherente. Antes de cambiar un parámetro de un subsistema (dimensiones, componentes, setpoints, tiempos), demuestra con
+    un cálculo que el valor original no cumple el requisito o es inconsistente; si el valor original ya cumple, consérvalo. Registra cada cambio
+    en una tabla de decisiones de integración con las columnas: parámetro, valor original y disciplina que lo propuso, valor nuevo, motivo,
+    cálculo que lo justifica e impacto en masa y costo. Después de cualquier cambio, recalcula los totales afectados (BOM, masa, costo, ciclo).
+    REGLA DE CIERRE DE ECR: Incluye una tabla con una fila por cada ECR del informe del cliente y las columnas: ECR, criterio de aceptación del
+    cliente (citado textualmente), evidencia disponible en los informes o en tus decisiones de integración y estado. El estado solo puede ser
+    Cumple, No cumple o Pendiente de prueba. Usa Cumple únicamente si la evidencia o el cálculo presentado satisface el criterio citado. Todo criterio que requiera medición, ensayo,
+    prototipo, simulación o cotización que no se haya hecho es Pendiente de prueba. No afirmes análisis, pruebas ni cotizaciones que no se realizaron.
+    El estado final del dossier debe ser coherente con esa tabla: si alguna ECR queda en No cumple o Pendiente de prueba, el diseño no puede declararse aprobado sin condiciones.
     REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    El expediente final consolidado (Conceptual Design Dossier) completo en formato Markdown según la metodología VDI 2206.
+    El expediente final consolidado (Conceptual Design Dossier) completo en formato Markdown según la metodología VDI 2206,
+    con la tabla de decisiones de integración, la tabla de cierre de ECR contra los criterios del cliente y un estado final coherente con ella.
   agent: team_lead
