@@ -10,28 +10,49 @@ from .crews.vdicrew.vdicrew import (LLM_CONFIG, MAX_PALABRAS, MAX_REINTENTOS_INC
                                    VdiCrew)
 
 
+# Contexto del caso de estudio (tipo de sistema, alcance, requerimientos y costo) en un archivo de texto,
+# independiente del codigo. Por defecto src/vdi/contexto.txt; VDI_CONTEXT_FILE permite usar otro caso.
+CONTEXTO_FILE = Path(os.environ.get("VDI_CONTEXT_FILE") or Path(__file__).resolve().parent / "contexto.txt")
+
+# Titulo de cada seccion del archivo -> variable que usan agents.yaml y tasks.yaml
+SECCIONES = {
+    "TIPO DE SISTEMA": "system_type",
+    "ALCANCE DEL PROYECTO": "project_scope",
+    "REQUERIMIENTOS PRIMARIOS": "primary_requirements",
+    "COSTO OBJETIVO": "target_cost",
+}
+
+
+def leer_contexto(archivo: Path) -> dict[str, str]:
+    """Lee las secciones '## TITULO' del archivo de contexto. Las lineas de cada seccion se unen con
+    espacios y se quita la vineta '- ', asi el texto llega a los agentes en una sola linea.
+    Las lineas que empiezan con un solo '#' son comentarios."""
+    datos: dict[str, list[str]] = {}
+    actual = None
+    for linea in archivo.read_text(encoding="utf-8").splitlines():
+        linea = linea.strip()
+        if linea.startswith("## "):
+            titulo = linea[3:].strip().upper()
+            if titulo not in SECCIONES:
+                raise ValueError(f"Seccion desconocida '{linea}' en {archivo}. Validas: {', '.join(SECCIONES)}")
+            actual = SECCIONES[titulo]
+            datos[actual] = []
+        elif linea and not linea.startswith("#") and actual:
+            datos[actual].append(linea[2:].strip() if linea.startswith("- ") else linea)
+    faltan = [titulo for titulo, clave in SECCIONES.items() if not datos.get(clave)]
+    if faltan:
+        raise ValueError(f"Faltan secciones o estan vacias en {archivo}: {', '.join(faltan)}")
+    contexto = {clave: " ".join(lineas) for clave, lineas in datos.items()}
+    if any("{" in texto or "}" in texto for texto in contexto.values()):
+        raise ValueError(f"El contexto no puede tener llaves: CrewAI las interpreta como variables ({archivo})")
+    return contexto
+
+
 class VdiState(BaseModel):
-    system_type: str = "Efector Final (Gripper) para Manipulación de Láminas de Acero"
-    project_scope: str = (
-        "Diseño mecatrónico e integración de un efector final (gripper) liviano (< 1.5 kg) "
-        "diseñado para acople directo a la brida ISO 9409-1-50-4-M6 del cobot Universal Robots UR5. "
-        "El sistema tomará láminas planas de acero AISI/SAE 1020 de 250x250x2 mm (~0.98 kg) "
-        "provenientes directamente de una estación de corte láser (superficie seca, con posible presencia "
-        "de rebaba o temperatura leve) y las alimentará a una celda de doblado o soldadura. "
-        "Se debe proponer y justificar el principio de sujeción óptimo (mecánico, magnético, vacío o híbrido)."
-    )
-    primary_requirements: str = (
-        "Masa total del gripper <= 1.5 kg (para garantizar carga combinada <= 2.5 kg en el UR5). "
-        "Tiempo de ciclo pick-and-place <= 4.0 s. "
-        "Garantizar sujeción segura y repetible de las láminas considerando rebabas o imperfecciones de borde. "
-        "Inclusión de sensado de verificación de agarre seguro ('pieza sujeta') antes de autorizar trayectoria del robot. "
-        "Alimentación y control compatible con la interfaz del UR5 (Tool I/O 24V DC / señales digitales o armario). "
-        "Cumplimiento de criterios de seguridad para robótica colaborativa bajo la norma ISO/TS 15066 "
-        "(geometría libre de bordes cortantes o puntos de atrapamiento)."
-    )
-    target_cost: str = (
-        "Costo objetivo de fabricación <= 1000 USD."
-    )
+    system_type: str = ""
+    project_scope: str = ""
+    primary_requirements: str = ""
+    target_cost: str = ""
     final_design: str = ""
 
 
@@ -40,6 +61,10 @@ class VdiFlow(Flow[VdiState]):
     @start()
     def plan_design(self, crewai_trigger_payload: dict = None):
         print("Initializing VDI 2206 Design Cycle")
+
+        for clave, texto in leer_contexto(CONTEXTO_FILE).items():
+            setattr(self.state, clave, texto)
+        print(f"[VDI] Contexto del caso: {CONTEXTO_FILE}", flush=True)
 
         if crewai_trigger_payload:
             self.state.system_type = crewai_trigger_payload.get("system_type", self.state.system_type)
@@ -66,7 +91,7 @@ class VdiFlow(Flow[VdiState]):
             LLM_CONFIG,
             inputs,
             {"max_palabras_por_informe": MAX_PALABRAS, "max_reintentos_guardrail": MAX_REINTENTOS_INCOMPLETO,
-             "contexto_metodologico": METODOLOGIA_ID},
+             "contexto_metodologico": METODOLOGIA_ID, "archivo_contexto": CONTEXTO_FILE.name},
         )
         
         result = (
