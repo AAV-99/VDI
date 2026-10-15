@@ -2,44 +2,86 @@ requirements_ingestion_task:
   description: >
     Analizar el tipo de proyecto {system_type}, el alcance general {project_scope}, los requerimientos
     principales {primary_requirements} y el presupuesto {target_cost}. Establecer los límites del sistema mecatrónico o IoT bajo la
-    metodología VDI 2206 y formular la matriz inicial de requerimientos funcionales y restricciones.
+    metodología VDI 2206 y desarrollar la Fase 1 (Información) siguiendo el contexto metodológico común.
+    CONTENIDO OBLIGATORIO, en este orden: (1) caja negra; (2) estructura funcional inicial; (3) descomposición funcional con atributos
+    y portadores de función preliminares; (4) stakeholders y sus necesidades; (5) clasificación de necesidades; (6) matriz de necesidades;
+    (7) requerimientos funcionales, requerimientos no funcionales, restricciones y especificaciones, cada uno con valor, unidad, límite y
+    método de verificación; (8) cuantificación de los parámetros y variables de diseño; (9) matriz QFD etapa 1 de necesidades frente a
+    requerimientos, con la importancia técnica calculada. No hagas benchmarking: decláralo como actividad pendiente.
     REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    Un informe de arquitectura de sistema completo en Markdown, estructurado formalmente en capítulos técnicos sin prosa de relleno, delimitando los límites conceptuales del proyecto.
+    Un informe de Fase 1 completo en Markdown con los nueve elementos obligatorios, identificadores trazables y la matriz QFD etapa 1,
+    estructurado en capítulos técnicos sin prosa de relleno.
+  agent: team_lead
+
+system_synthesis_task:
+  description: >
+    Desarrollar la Fase 2 (Síntesis de diseño) a nivel de sistema para {system_type}, a partir del informe de requerimientos y siguiendo
+    el contexto metodológico común. Esta es la etapa de diseño del sistema del modelo en V de la VDI 2206: aquí se elige el concepto y se
+    reparten las funciones entre los dominios; las disciplinas lo desarrollarán después.
+    CONTENIDO OBLIGATORIO, en este orden: (1) validación y reestructuración de la caja negra y la estructura funcional; (2) matriz morfológica
+    con al menos tres principios de solución por subfunción; (3) rutas factibles con al menos tres conceptos diferentes; (4) evaluación de
+    conceptos con pesos derivados del QFD etapa 1 y el cálculo de cada puntaje; (5) concepto seleccionado y su justificación frente a
+    {primary_requirements}; (6) arquitectura del producto con módulos, asignación de subfunciones a módulos y dominios, e interfaces entre
+    módulos; (7) matriz QFD etapa 2 de requerimientos frente a variables de diseño; (8) matriz de diseño axiomático con su diagnóstico de
+    acoplamiento; (9) presupuestos preliminares de masa, costo y tiempo de ciclo repartidos por módulo, que las disciplinas deben respetar.
+    REGLA DE FORMATO: Usa tablas Markdown para la matriz morfológica, la evaluación, el QFD y la matriz axiomática, y diagramas Mermaid (```mermaid) para la estructura funcional y la arquitectura del producto. PROHIBIDO el uso de ASCII Art.
+    EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
+    CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
+  expected_output: >
+    Un informe de síntesis del sistema en Markdown con la matriz morfológica, al menos tres conceptos evaluados, el concepto seleccionado,
+    la arquitectura del producto con interfaces, las matrices QFD etapa 2 y de diseño axiomático, y los presupuestos por módulo.
   agent: team_lead
 
 mechanical_subsystem_design_task:
   description: >
-    Desarrollar la propuesta conceptual del subsistema mecánico, estructural o de envolvente para {system_type}.
-    Explicar los conceptos mecánicos adoptados para cumplir con {project_scope}, detallando qué mecanismos,
-    sistemas de sujeción, transmisión o disipación se utilizarán. Generar una tabla de BOM Preliminar Mecánico
-    especificando materiales (aleaciones, polímeros, compuestos) y componentes comerciales principales.
+    Desarrollar el diseño específico del dominio mecánico, estructural o de envolvente para {system_type} según la VDI 2206.
+    PUNTO DE PARTIDA: Desarrolla el concepto seleccionado en la síntesis del sistema y respeta su arquitectura, interfaces y presupuestos.
+    No cambies el principio de solución; si un cálculo demuestra que no es viable en tu dominio, decláralo con ese cálculo y propone la
+    alternativa de la matriz morfológica que lo resolvería.
+    CONTENIDO OBLIGATORIO: (1) subfunciones y portadores de función mecánicos asignados por la arquitectura; (2) mecanismos, sujeción,
+    transmisión o disipación adoptados para cumplir con {project_scope}; (3) dimensionamiento de los componentes críticos con cargas,
+    materiales y factores de seguridad; (4) verificación de cada requerimiento asignado al dominio con su método; (5) interfaces mecánicas
+    con los otros dominios; (6) BOM Preliminar Mecánico con material o referencia, cantidad, masa y costo por línea y totales que sumen.
     REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    Un reporte técnico del subsistema mecánico exhaustivo que desglose la justificación conceptual de los mecanismos y presente la tabla BOM preliminar completa.
+    Un reporte técnico del dominio mecánico con el dimensionamiento de componentes críticos, la verificación de los requerimientos asignados,
+    las interfaces y la tabla BOM preliminar con masa y costo por línea.
   agent: mecanico
 
 electronic_subsystem_design_task:
   description: >
-    Desarrollar la propuesta conceptual del subsistema electrónico, hardware y control para {system_type}.
-    Explicar la arquitectura de instrumentación, sensores, actuadores, etapas de potencia y comunicación
-    para responder a {primary_requirements}. Construir una tabla de BOM Preliminar Electrónico de componentes comerciales.
+    Desarrollar el diseño específico del dominio eléctrico y electrónico (hardware, instrumentación y control) para {system_type} según la VDI 2206.
+    PUNTO DE PARTIDA: Desarrolla el concepto seleccionado en la síntesis del sistema y respeta su arquitectura, interfaces y presupuestos.
+    No cambies el principio de solución; si un cálculo demuestra que no es viable en tu dominio, decláralo con ese cálculo y propone la
+    alternativa de la matriz morfológica que lo resolvería.
+    CONTENIDO OBLIGATORIO: (1) arquitectura de instrumentación, sensores, actuadores, potencia y comunicación para responder a
+    {primary_requirements}; (2) dimensionamiento de los componentes críticos, incluido el presupuesto de potencia y corriente; (3) análisis
+    de integración de cada interfaz eléctrica y de señal con protocolo, niveles y compatibilidad, más la prueba de compatibilidad propuesta;
+    (4) verificación de cada requerimiento asignado al dominio con su método; (5) BOM Preliminar Electrónico con referencia típica, cantidad,
+    masa y costo por línea y totales que sumen. No repitas en tu BOM componentes que ya estén en el BOM mecánico.
     REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    Un reporte técnico del subsistema electrónico detallado con diagramas de bloques en Mermaid y la tabla BOM preliminar de componentes electrónicos comercialmente disponibles.
+    Un reporte técnico del dominio eléctrico y electrónico con diagramas de bloques en Mermaid, el presupuesto de potencia, el análisis de
+    integración de interfaces y la tabla BOM preliminar con masa y costo por línea.
   agent: electronico
 
 software_subsystem_design_task:
   description: >
-    Desarrollar la propuesta conceptual de la arquitectura de software o firmware para {system_type}. Explicar
-    la organización modular (procesamiento en el borde, tiempo real, capas de red, HMI/Cloud según aplique)
-    necesaria para {primary_requirements}. Proponer el stack de tecnologías, plataformas y herramientas sugeridas.
+    Desarrollar el diseño específico del dominio de software o firmware para {system_type} según la VDI 2206.
+    PUNTO DE PARTIDA: Desarrolla el concepto seleccionado en la síntesis del sistema y respeta su arquitectura, interfaces y presupuestos.
+    No cambies el principio de solución; si un cálculo demuestra que no es viable en tu dominio, decláralo con ese cálculo y propone la
+    alternativa de la matriz morfológica que lo resolvería.
+    CONTENIDO OBLIGATORIO: (1) organización modular (procesamiento en el borde, tiempo real, capas de red, HMI o Cloud según aplique)
+    necesaria para {primary_requirements}; (2) máquina de estados y lógica de control con sus tiempos; (3) análisis de integración de
+    las interfaces de datos y señales con los otros dominios, con protocolo, temporización y prueba de compatibilidad propuesta;
+    (4) verificación de cada requerimiento asignado al dominio con su método; (5) stack de tecnologías, plataformas y herramientas.
     REGLA DE FORMATO: Modulos, capas de firmware y máquinas de estado deben diagramarse mediante sintaxis Mermaid (```mermaid) o tablas de transición de estado. NO INCLUIR NINGÚN BLOQUE DE CÓDIGO NI ASCII ART.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -63,6 +105,11 @@ client_acceptance_review_task:
   description: >
     Revisar de forma integral las propuestas técnicas entregadas para {system_type} asegurando el cumplimiento
     de {primary_requirements} y el {target_cost}. Emitir el dictamen de validación, observaciones de usabilidad y solicitudes de cambio.
+    VERIFICACIÓN METODOLÓGICA: Comprueba que cada requerimiento tenga valor medible, método de verificación y un portador de función o
+    componente asignado; que el concepto seleccionado sea consistente con la evaluación de conceptos; que los diseños de dominio respeten la
+    arquitectura y los presupuestos de la síntesis del sistema; que los totales de cada tabla sumen sus líneas; y que las masas y
+    dimensiones sean físicamente plausibles (volumen por densidad en piezas macizas). Cada ECR debe tener un
+    criterio de aceptación verificable.
     REGLA DE FORMATO: Organiza la validación en una matriz de conformidad (Tabla Markdown) evaluando cada requisito frente al costo y desempeño propuesto.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -85,6 +132,8 @@ design_board_integration_task:
     Cumple, No cumple o Pendiente de prueba. Usa Cumple únicamente si la evidencia o el cálculo presentado satisface el criterio citado. Todo criterio que requiera medición, ensayo,
     prototipo, simulación o cotización que no se haya hecho es Pendiente de prueba. No afirmes análisis, pruebas ni cotizaciones que no se realizaron.
     El estado final del dossier debe ser coherente con esa tabla: si alguna ECR queda en No cumple o Pendiente de prueba, el diseño no puede declararse aprobado sin condiciones.
+    TRAZABILIDAD DEL CONCEPTO: Resume la cadena necesidades, requerimientos, matriz morfológica, ruta factible, evaluación y concepto
+    seleccionado, y actualiza la matriz de diseño axiomático con los parámetros finales.
     REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.

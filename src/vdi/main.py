@@ -6,7 +6,8 @@ from pydantic import BaseModel
 from crewai.flow import Flow, listen, start
 
 from .corrida import RUN_DIR, registrar_fin, registrar_inicio
-from .crews.vdicrew.vdicrew import (LLM_CONFIG, MAX_PALABRAS, MAX_REINTENTOS_INCOMPLETO, VdiCrew)
+from .crews.vdicrew.vdicrew import (LLM_CONFIG, MAX_PALABRAS, MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID,
+                                   VdiCrew)
 
 
 class VdiState(BaseModel):
@@ -64,7 +65,8 @@ class VdiFlow(Flow[VdiState]):
         registrar_inicio(
             LLM_CONFIG,
             inputs,
-            {"max_palabras_por_informe": MAX_PALABRAS, "max_reintentos_guardrail": MAX_REINTENTOS_INCOMPLETO},
+            {"max_palabras_por_informe": MAX_PALABRAS, "max_reintentos_guardrail": MAX_REINTENTOS_INCOMPLETO,
+             "contexto_metodologico": METODOLOGIA_ID},
         )
         
         result = (

@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 from datetime import datetime
@@ -70,6 +71,13 @@ def guardrail_informe_completo(tarea: str):
 
     return validar
 
+# Contexto metodologico comun (VDI 2206 y herramientas de diseno conceptual de las Fases 1 y 2).
+# Se agrega al backstory de todos los agentes. Su huella queda en corrida.json para saber que version se uso.
+# No debe contener llaves: CrewAI las interpreta como variables de entrada.
+ARCHIVO_METODOLOGIA = Path(__file__).parent / "config" / "metodologia.md"
+METODOLOGIA = ARCHIVO_METODOLOGIA.read_text(encoding="utf-8").strip()
+METODOLOGIA_ID = hashlib.sha256(METODOLOGIA.encode("utf-8")).hexdigest()[:12]
+
 # Configuracion del LLM. Se guarda tal cual en corrida.json.
 LLM_CONFIG = {
     "model": "ollama_chat/qwen3.8-vdi",
@@ -107,30 +115,35 @@ class VdiCrew:
         timeout=120,               # Tiempo máximo de espera por solicitud
     ) """
 
+    def _agente(self, nombre: str) -> Agent:
+        """Agente con su backstory de agents.yaml mas el contexto metodologico comun."""
+        cfg = self.agents_config[nombre]
+        return Agent(config=cfg, backstory=cfg["backstory"].rstrip() + "\n\n" + METODOLOGIA, llm=self.llm, verbose=True)
+
     # --- AGENTES VDI 2206 ---
     @agent
     def team_lead(self) -> Agent:
-        return Agent(config=self.agents_config["team_lead"], llm=self.llm, verbose=True)
+        return self._agente("team_lead")
 
     @agent
     def mecanico(self) -> Agent:
-        return Agent(config=self.agents_config["mecanico"], llm=self.llm, verbose=True)
+        return self._agente("mecanico")
 
     @agent
     def electronico(self) -> Agent:
-        return Agent(config=self.agents_config["electronico"], llm=self.llm, verbose=True)
+        return self._agente("electronico")
 
     @agent
     def software(self) -> Agent:
-        return Agent(config=self.agents_config["software"], llm=self.llm, verbose=True)
+        return self._agente("software")
 
     @agent
     def mantenimiento(self) -> Agent:
-        return Agent(config=self.agents_config["mantenimiento"], llm=self.llm, verbose=True)
+        return self._agente("mantenimiento")
 
     @agent
     def cliente(self) -> Agent:
-        return Agent(config=self.agents_config["cliente"], llm=self.llm, verbose=True)
+        return self._agente("cliente")
 
     # --- TAREAS CON SALIDA A ARCHIVOS INDIVIDUALES ---
     @task
@@ -139,6 +152,15 @@ class VdiCrew:
             config=self.tasks_config["requirements_ingestion_task"],
             output_file=str(RUN_DIR / "01_requirements_and_system.md"),
             guardrail=guardrail_informe_completo("requirements_ingestion_task"),
+            guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
+        )
+
+    @task
+    def system_synthesis_task(self) -> Task:
+        return Task(
+            config=self.tasks_config["system_synthesis_task"],
+            output_file=str(RUN_DIR / "01b_system_synthesis.md"),
+            guardrail=guardrail_informe_completo("system_synthesis_task"),
             guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO,
         )
 
