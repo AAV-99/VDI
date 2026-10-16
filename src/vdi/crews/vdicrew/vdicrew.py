@@ -8,6 +8,7 @@ from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
 
 from ...corrida import RUN_DIR
+from ...registro_llm import RegistroLLM
 
 # --- GUARDRAIL DE COMPLETITUD ---
 # Cada tarea debe cerrar su informe con MARCA_FIN (se pide en tasks.yaml).
@@ -104,7 +105,8 @@ class VdiCrew:
 
     # El contexto (num_ctx) NO se configura aqui: CrewAI usa el endpoint /v1 de Ollama, que lo ignora.
     # Esta fijado en el servidor, en el Modelfile de qwen3.8-vdi (131072 tokens).
-    llm = LLM(**LLM_CONFIG)
+    # El interceptor anota cada respuesta del modelo en _llm.log y guarda las que llegan vacias en llm_vacias/.
+    llm = LLM(**LLM_CONFIG, interceptor=RegistroLLM(RUN_DIR, MARCA_FIN))
 
     """     # Configuración del LLM con control de tokens
     llm = LLM(
