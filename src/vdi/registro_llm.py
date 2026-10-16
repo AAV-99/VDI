@@ -2,11 +2,13 @@
 
 Escribe una linea por peticion en RUN_DIR/_llm.log. Cuando la respuesta llega sin texto
 (content vacio), guarda la peticion y la respuesta completas en RUN_DIR/llm_vacias/ para
-poder analizarlas y repetirlas. El registro nunca debe tumbar la corrida: cualquier error
-interno se anota y la respuesta sigue su curso sin cambios.
+poder analizarlas y repetirlas. Con VDI_GUARDAR_RESPUESTAS=1 guarda ademas el texto y el
+razonamiento de todas las respuestas en RUN_DIR/llm_respuestas/. El registro nunca debe tumbar
+la corrida: cualquier error interno se anota y la respuesta sigue su curso sin cambios.
 """
 import itertools
 import json
+import os
 import threading
 import time
 from datetime import datetime
@@ -59,6 +61,12 @@ class RegistroLLM(BaseInterceptor[httpx.Request, httpx.Response]):
             self.marca_fin in content, self.marca_fin in razonamiento, "Final Answer" in razonamiento,
         )
         self._escribir_linea("\t".join(str(x) for x in fila))
+
+        if os.environ.get("VDI_GUARDAR_RESPUESTAS") == "1" and respuesta.status_code == 200:
+            destino = self.carpeta / "llm_respuestas"
+            destino.mkdir(parents=True, exist_ok=True)
+            (destino / f"{n:02d}_razonamiento.md").write_text(razonamiento, encoding="utf-8")
+            (destino / f"{n:02d}_respuesta.md").write_text(content, encoding="utf-8")
 
         if respuesta.status_code == 200 and not content.strip():
             destino = self.carpeta / "llm_vacias"
