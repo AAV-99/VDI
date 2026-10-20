@@ -9,6 +9,7 @@ from crewai.project import CrewBase, agent, crew, task
 
 from ...corrida import RUN_DIR
 from ...registro_llm import RegistroLLM
+from .herramientas import MAX_CONSULTAS_RAG, MAX_USOS_CALCULADORA, herramientas_agente
 
 # --- GUARDRAIL DE COMPLETITUD ---
 # Cada tarea debe cerrar su informe con MARCA_FIN (se pide en tasks.yaml).
@@ -77,13 +78,26 @@ def guardrail_informe_completo(tarea: str):
 # No debe contener llaves: CrewAI las interpreta como variables de entrada.
 ARCHIVO_METODOLOGIA = Path(__file__).parent / "config" / "metodologia.md"
 METODOLOGIA = ARCHIVO_METODOLOGIA.read_text(encoding="utf-8").strip()
+
+# Herramientas (RAG de los manuales y calculadora). VDI_HERRAMIENTAS=0 las apaga y reproduce las etapas
+# anteriores. Cuando estan activas, cada agente recibe tambien las reglas de uso de herramientas.md.
+HERRAMIENTAS_ACTIVAS = os.environ.get("VDI_HERRAMIENTAS", "1").strip() != "0"
+ARCHIVO_HERRAMIENTAS = Path(__file__).parent / "config" / "herramientas.md"
+if HERRAMIENTAS_ACTIVAS:
+    METODOLOGIA += "\n\n" + ARCHIVO_HERRAMIENTAS.read_text(encoding="utf-8").strip()
 METODOLOGIA_ID = hashlib.sha256(METODOLOGIA.encode("utf-8")).hexdigest()[:12]
+# Con herramientas cada consulta o calculo es una iteracion mas del agente (el valor por defecto de CrewAI es 25)
+MAX_ITERACIONES = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA if HERRAMIENTAS_ACTIVAS else 0)
 
 # Configuracion del LLM. Se guarda tal cual en corrida.json.
 LLM_CONFIG = {
     "model": "ollama_chat/qwen3.8-vdi",
     "base_url": "http://" + os.environ.get("OLLAMA_HOST", "localhost:11434"),
-    "temperature": 0.2,
+    # Muestreo recomendado por Qwen para el modo de razonamiento. Con temperatura 0.2 el razonamiento entraba
+    # a veces en bucles de repeticion que terminaban en respuesta vacia o en el tope de tokens
+    # (prueba diagnostico_muestreo, job 22902: 1 de 7 vacia con 0.2 y 0 de 14 con 0.6).
+    "temperature": 0.6,
+    "top_p": 0.95,
     "max_retries": 1,
     "max_tokens": MAX_TOKENS_RESPUESTA,
     "timeout": 1800,  # 30 min: en Apolo la peticion mas larga de una corrida normal dura menos de 5 min
@@ -118,9 +132,17 @@ class VdiCrew:
     ) """
 
     def _agente(self, nombre: str) -> Agent:
-        """Agente con su backstory de agents.yaml mas el contexto metodologico comun."""
+        """Agente con su backstory de agents.yaml mas el contexto metodologico comun y, si estan
+        activas, sus propias instancias de las herramientas (cada una con su tope de usos por tarea)."""
         cfg = self.agents_config[nombre]
-        return Agent(config=cfg, backstory=cfg["backstory"].rstrip() + "\n\n" + METODOLOGIA, llm=self.llm, verbose=True)
+        return Agent(
+            config=cfg,
+            backstory=cfg["backstory"].rstrip() + "\n\n" + METODOLOGIA,
+            llm=self.llm,
+            tools=herramientas_agente() if HERRAMIENTAS_ACTIVAS else [],
+            max_iter=MAX_ITERACIONES,
+            verbose=True,
+        )
 
     # --- AGENTES VDI 2206 ---
     @agent

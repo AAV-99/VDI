@@ -1,6 +1,6 @@
 # VDI 2206 — Sistema multiagente para diseño conceptual mecatrónico
 
-Flujo de **CrewAI** que desarrolla el diseño conceptual de un sistema mecatrónico según la guía **VDI/VDE 2206**, con un modelo de lenguaje local servido por **Ollama**. Seis agentes (integración de sistemas, mecánica, electrónica, software, RAMS y cliente) ejecutan ocho tareas en secuencia: requerimientos (Fase 1), síntesis del sistema (Fase 2), diseño por dominio, evaluación RAMS, revisión del cliente y dossier consolidado.
+Flujo de **CrewAI** que desarrolla el diseño conceptual de un sistema mecatrónico según la guía **VDI/VDE 2206**, con un modelo de lenguaje local servido por **Ollama**. Seis agentes (integración de sistemas, mecánica, electrónica, software, RAMS y cliente) ejecutan ocho tareas en secuencia: requerimientos (Fase 1), síntesis del sistema (Fase 2), diseño por dominio, evaluación RAMS, revisión del cliente y dossier consolidado. Los agentes disponen de dos herramientas: consulta a los manuales técnicos del robot (RAG) y una calculadora.
 
 ## Requisitos del sistema
 
@@ -17,6 +17,14 @@ El modelo derivado se crea una vez en el servidor de Ollama:
 ```bash
 ollama create qwen3.8-vdi -f Modelfile
 ```
+
+**Documentos del RAG.** Los manuales van en la carpeta `knowledge/` (PDF, TXT o MD) y no se publican en el repositorio por derechos de autor; se copian a mano. El índice se guarda en `.rag_db/` y se reconstruye solo cuando cambian los documentos. La primera vez se descarga el modelo de embeddings (all-MiniLM-L6-v2 en ONNX, en `~/.cache/chroma`), así que en un clúster el índice se construye en un nodo con internet:
+
+```bash
+uv run python -m vdi.crews.vdicrew.herramientas "allowable torque axis 6"
+```
+
+El comando lista los documentos, construye el índice si hace falta y muestra el resultado de la consulta de prueba.
 
 ## Cómo ejecutar
 
@@ -38,6 +46,8 @@ ollama create qwen3.8-vdi -f Modelfile
    | `VDI_REASONING_EFFORT` | Esfuerzo de razonamiento del modelo: `low`, `medium`, `high` o `xhigh` | El del modelo |
    | `VDI_CONTEXT_FILE` | Otro archivo de contexto (otro caso de estudio) | `src/vdi/contexto.txt` |
    | `VDI_RUN_DIR` | Carpeta de salida de la corrida | `output/<fecha_hora>` |
+   | `VDI_HERRAMIENTAS` | `0` apaga el RAG y la calculadora (configuración de las etapas anteriores) | Activas |
+   | `VDI_KNOWLEDGE_DIR` | Otra carpeta de documentos para el RAG | `knowledge/` |
 
    Ejemplo: `VDI_REASONING_EFFORT=high VDI_CONTEXT_FILE=casos/banda.txt bash correr.sh`
 
@@ -51,7 +61,9 @@ En un clúster con Slurm, el script de trabajo debe levantar Ollama dentro del t
 | `src/vdi/crews/vdicrew/config/agents.yaml` | Rol, objetivo y trasfondo de cada agente |
 | `src/vdi/crews/vdicrew/config/tasks.yaml` | Instrucciones y entregable de cada tarea |
 | `src/vdi/crews/vdicrew/config/metodologia.md` | Contexto metodológico común (VDI 2206 y herramientas de diseño conceptual) que reciben todos los agentes |
-| `src/vdi/crews/vdicrew/vdicrew.py` | Modelo, límites de tokens y palabras, y guardrail de informes completos |
+| `src/vdi/crews/vdicrew/config/herramientas.md` | Reglas de uso de las herramientas que reciben los agentes cuando están activas |
+| `src/vdi/crews/vdicrew/herramientas.py` | RAG de los manuales, calculadora y topes de uso por tarea |
+| `src/vdi/crews/vdicrew/vdicrew.py` | Modelo y muestreo, límites de tokens y palabras, y guardrail de informes completos |
 
 ## Salidas
 
@@ -69,4 +81,6 @@ Cada corrida queda en su propia carpeta dentro de `output/` (ignorada por Git):
 | `00_vdi2206_consolidated_dossier.md` | Dossier consolidado con decisiones de integración y cierre de ECR |
 | `corrida.json` | Commit, configuración del modelo, entradas, parámetros y tiempos de la corrida |
 | `_guardrail.log` | Resultado de la verificación de completitud de cada informe |
+| `_llm.log` | Una línea por respuesta del modelo: tokens, tiempo, motivo de fin y herramientas pedidas |
+| `_herramientas.log` | Cada consulta al RAG y cada cálculo, con la tarea que lo pidió y el inicio del resultado |
 | `corrida.log` | Log completo de CrewAI |

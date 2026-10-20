@@ -4,3 +4,7 @@ lib/
 .DS_Store
 output/
 corrida_*.log
+# Documentos del RAG y su indice: no se publican (derechos de autor). Se copian a mano.
+knowledge/
+.rag_db/
+referencias/

@@ -6,8 +6,9 @@ from pydantic import BaseModel
 from crewai.flow import Flow, listen, start
 
 from .corrida import RUN_DIR, registrar_fin, registrar_inicio
-from .crews.vdicrew.vdicrew import (LLM_CONFIG, MAX_PALABRAS, MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID,
-                                   VdiCrew)
+from .crews.vdicrew import herramientas
+from .crews.vdicrew.vdicrew import (HERRAMIENTAS_ACTIVAS, LLM_CONFIG, MAX_ITERACIONES, MAX_PALABRAS,
+                                   MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID, VdiCrew)
 
 
 # Contexto del caso de estudio (tipo de sistema, alcance, requerimientos y costo) en un archivo de texto,
@@ -87,12 +88,20 @@ class VdiFlow(Flow[VdiState]):
             "target_cost": self.state.target_cost,
             "max_palabras": MAX_PALABRAS,
         }
-        registrar_inicio(
-            LLM_CONFIG,
-            inputs,
-            {"max_palabras_por_informe": MAX_PALABRAS, "max_reintentos_guardrail": MAX_REINTENTOS_INCOMPLETO,
-             "contexto_metodologico": METODOLOGIA_ID, "archivo_contexto": CONTEXTO_FILE.name},
-        )
+        parametros = {"max_palabras_por_informe": MAX_PALABRAS, "max_reintentos_guardrail": MAX_REINTENTOS_INCOMPLETO,
+                      "contexto_metodologico": METODOLOGIA_ID, "archivo_contexto": CONTEXTO_FILE.name,
+                      "herramientas": {"activas": HERRAMIENTAS_ACTIVAS}}
+        if HERRAMIENTAS_ACTIVAS:
+            # El indice se abre (o se construye) antes de empezar: si falla, la corrida se detiene aqui
+            # en vez de seguir con una herramienta que solo devuelve errores.
+            herramientas.buscar("allowable payload")
+            parametros["herramientas"].update({
+                "documentos_rag": herramientas.huella_documentos(),
+                "max_consultas_rag_por_tarea": herramientas.MAX_CONSULTAS_RAG,
+                "max_usos_calculadora_por_tarea": herramientas.MAX_USOS_CALCULADORA,
+                "max_iteraciones_agente": MAX_ITERACIONES,
+            })
+        registrar_inicio(LLM_CONFIG, inputs, parametros)
         
         result = (
             VdiCrew()
