@@ -2,10 +2,13 @@
 
 RAG. Indexa los documentos de knowledge/ (PDF, TXT o MD), que no van en Git y se copian a mano.
 Los PDF se leen pagina por pagina con PyMuPDF conservando la disposicion de las tablas, y el texto
-se parte en fragmentos de unos 1000 caracteres (lo que alcanza a leer el modelo de embeddings).
-Embeddings: all-MiniLM-L6-v2 en ONNX, local y sin API key; chromadb lo descarga a ~/.cache/chroma
-la primera vez. El indice queda en .rag_db/ y solo se reconstruye cuando cambian los documentos.
-En Apolo hay que construirlo en el nodo de entrada (que tiene internet) con:
+se parte en fragmentos de unos 1000 caracteres. La busqueda es hibrida: combina por rangos
+reciprocos (RRF) la similitud de embeddings (qwen3-embedding:0.6b, servido por el mismo Ollama de
+la corrida) con BM25, que favorece terminos exactos como Y00 o 16.2N.m. Es la mejor configuracion
+de la evaluacion diagnostico_rag (job 22918: acierto@1 0.95, acierto@4 1.0, MRR@4 0.975 en 20
+consultas, frente a 0.55, 0.8 y 0.658 del modelo ONNX MiniLM inicial).
+El indice queda en .rag_db/ y solo se reconstruye cuando cambian los documentos, el modelo o la
+particion. Se construye al empezar la corrida (necesita Ollama con el modelo de embeddings). Prueba:
     uv run python -m vdi.crews.vdicrew.herramientas "allowable torque axis 6"
 
 CALCULADORA. Evalua expresiones aritmeticas con funciones de math, sin eval de Python.
@@ -21,6 +24,8 @@ import operator
 import os
 import sys
 import threading
+import urllib.request
+from collections import Counter
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -35,17 +40,23 @@ from ...corrida import RUN_DIR
 ROOT = Path(__file__).resolve().parents[4]
 KNOWLEDGE_DIR = Path(os.environ.get("VDI_KNOWLEDGE_DIR") or ROOT / "knowledge")
 RAG_DB_DIR = ROOT / ".rag_db"
-HUELLA_FILE = RAG_DB_DIR / "documentos_indexados.json"
+HUELLA_FILE = RAG_DB_DIR / "huella.json"
+FRAGMENTOS_FILE = RAG_DB_DIR / "fragmentos.json"
+VECTORES_FILE = RAG_DB_DIR / "vectores.npy"
 EXTENSIONES = {".pdf", ".txt", ".md"}
-COLECCION = "manuales"
+MODELO_EMBEDDINGS = os.environ.get("VDI_EMBEDDINGS", "qwen3-embedding:0.6b")
+# Los modelos qwen3-embedding esperan una instruccion antes de la consulta (no antes de los documentos)
+INSTRUCCION_CONSULTA = "Instruct: Given a question about an industrial robot, retrieve manual passages that answer it\nQuery:"
 LIMITE_RESULTADOS = 4
-TAM_FRAGMENTO = 1000  # caracteres; all-MiniLM-L6-v2 solo lee los primeros 256 tokens de cada fragmento
+TAM_FRAGMENTO = 1000  # caracteres
 SOLAPE = 200
-SIMILITUD_MINIMA = 0.2  # similitud coseno; por debajo el fragmento se descarta
+RRF_K = 60
 
 # Topes de uso por tarea. Evitan que un agente se quede consultando en vez de redactar el informe.
 MAX_CONSULTAS_RAG = 6
-MAX_USOS_CALCULADORA = 25
+# Con 25 usos la sintesis hacia un calculo por peticion y repetia el razonamiento en cada una
+# (corrida de prueba 22912: 16 peticiones y 107 000 tokens solo en esa tarea).
+MAX_USOS_CALCULADORA = 8
 
 REGISTRO = RUN_DIR / "_herramientas.log"
 _lock = threading.Lock()
@@ -87,8 +98,12 @@ def _huella(docs: list[Path]) -> dict[str, list[int]]:
     return {p.name: [p.stat().st_size, int(p.stat().st_mtime)] for p in docs}
 
 
-def huella_documentos() -> dict[str, list[int]]:
-    return _huella(documentos())
+def _huella_indice(docs: list[Path]) -> dict:
+    return {"documentos": _huella(docs), "modelo": MODELO_EMBEDDINGS, "fragmento": [TAM_FRAGMENTO, SOLAPE]}
+
+
+def huella_documentos() -> dict:
+    return _huella_indice(documentos())
 
 
 def _paginas(doc: Path) -> list[tuple[int, str]]:
@@ -133,57 +148,96 @@ def _fragmentos(texto: str) -> list[str]:
     return [p for p in piezas if len(p) > 40]
 
 
+def _embeddings(textos: list[str]):
+    """Vectores normalizados del modelo de embeddings servido por Ollama."""
+    import numpy as np
+
+    url = "http://" + os.environ.get("OLLAMA_HOST", "localhost:11434") + "/api/embed"
+    vectores = []
+    for i in range(0, len(textos), 32):
+        cuerpo = json.dumps({"model": MODELO_EMBEDDINGS, "input": textos[i:i + 32], "truncate": True}).encode()
+        req = urllib.request.Request(url, data=cuerpo, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=600) as r:
+            vectores += json.loads(r.read())["embeddings"]
+    m = np.array(vectores, dtype=np.float32)
+    return m / np.maximum(np.linalg.norm(m, axis=1, keepdims=True), 1e-12)
+
+
+def _tokens(texto: str) -> list[str]:
+    return re.findall(r"[a-z0-9]+(?:\.[0-9]+)?", texto.lower())
+
+
+class _BM25:
+    def __init__(self, textos: list[str], k1: float = 1.5, b: float = 0.75):
+        self.docs = [Counter(_tokens(t)) for t in textos]
+        self.largos = [sum(d.values()) for d in self.docs]
+        self.media = sum(self.largos) / max(len(self.largos), 1)
+        self.df = Counter(t for d in self.docs for t in d)
+        self.k1, self.b, self.n = k1, b, len(textos)
+
+    def puntajes(self, consulta: str) -> list[float]:
+        salida = [0.0] * self.n
+        for t in set(_tokens(consulta)):
+            if t not in self.df:
+                continue
+            idf = math.log(1 + (self.n - self.df[t] + 0.5) / (self.df[t] + 0.5))
+            for i, d in enumerate(self.docs):
+                f = d.get(t)
+                if f:
+                    salida[i] += idf * f * (self.k1 + 1) / (f + self.k1 * (1 - self.b + self.b * self.largos[i] / self.media))
+        return salida
+
+
 @lru_cache
-def _coleccion():
-    """Coleccion de chromadb con los manuales. Se reconstruye solo si cambian los documentos de knowledge/."""
-    import chromadb
-    from chromadb.utils.embedding_functions import ONNXMiniLM_L6_V2
+def _indice():
+    """Fragmentos, sus vectores y el indice BM25. Se reconstruye solo si cambia la huella."""
+    import numpy as np
 
     docs = documentos()
     if not docs:
         raise FileNotFoundError(f"No hay documentos para el RAG en {KNOWLEDGE_DIR}")
-    cliente = chromadb.PersistentClient(path=str(RAG_DB_DIR), settings=chromadb.Settings(anonymized_telemetry=False))
-    funcion = ONNXMiniLM_L6_V2()
-    huella = _huella(docs)
+    huella = _huella_indice(docs)
     anterior = json.loads(HUELLA_FILE.read_text(encoding="utf-8")) if HUELLA_FILE.exists() else None
-    if huella == anterior:
-        return cliente.get_collection(COLECCION, embedding_function=funcion)
-
-    print(f"[VDI] Indexando {len(docs)} documentos de {KNOWLEDGE_DIR}...", flush=True)
-    try:
-        cliente.delete_collection(COLECCION)  # sin restos de documentos borrados o reemplazados
-    except Exception:
-        pass
-    coleccion = cliente.create_collection(COLECCION, embedding_function=funcion, metadata={"hnsw:space": "cosine"})
-    for doc in docs:
-        textos, metadatos = [], []
-        paginas = _paginas(doc)
-        repetidas = _lineas_repetidas(paginas)
-        for pagina, texto in paginas:
-            texto = "\n".join(l for l in texto.split("\n") if l.strip() not in repetidas)
-            for i, fragmento in enumerate(_fragmentos(_limpiar(texto))):
-                textos.append(fragmento)
-                metadatos.append({"archivo": doc.name, "pagina": pagina, "parte": i})
-        for k in range(0, len(textos), 200):
-            coleccion.add(ids=[f"{doc.name}|{m['pagina']}|{m['parte']}" for m in metadatos[k:k + 200]],
-                          documents=textos[k:k + 200], metadatas=metadatos[k:k + 200])
-        print(f"[VDI]   {doc.name}: {len(textos)} fragmentos", flush=True)
-    HUELLA_FILE.write_text(json.dumps(huella, ensure_ascii=False, indent=1), encoding="utf-8")
-    print("[VDI] Indice listo", flush=True)
-    return coleccion
+    if huella == anterior and FRAGMENTOS_FILE.exists() and VECTORES_FILE.exists():
+        fragmentos = json.loads(FRAGMENTOS_FILE.read_text(encoding="utf-8"))
+        vectores = np.load(VECTORES_FILE)
+    else:
+        print(f"[VDI] Indexando {len(docs)} documentos de {KNOWLEDGE_DIR} con {MODELO_EMBEDDINGS}...", flush=True)
+        fragmentos = []
+        for doc in docs:
+            paginas = _paginas(doc)
+            repetidas = _lineas_repetidas(paginas)
+            n0 = len(fragmentos)
+            for pagina, texto in paginas:
+                texto = "\n".join(l for l in texto.split("\n") if l.strip() not in repetidas)
+                fragmentos += [{"archivo": doc.name, "pagina": pagina, "texto": f} for f in _fragmentos(_limpiar(texto))]
+            print(f"[VDI]   {doc.name}: {len(fragmentos) - n0} fragmentos", flush=True)
+        vectores = _embeddings([f["texto"] for f in fragmentos])
+        RAG_DB_DIR.mkdir(parents=True, exist_ok=True)
+        FRAGMENTOS_FILE.write_text(json.dumps(fragmentos, ensure_ascii=False), encoding="utf-8")
+        np.save(VECTORES_FILE, vectores)
+        HUELLA_FILE.write_text(json.dumps(huella, ensure_ascii=False, indent=1), encoding="utf-8")
+        print("[VDI] Indice listo", flush=True)
+    return fragmentos, vectores, _BM25([f["texto"] for f in fragmentos])
 
 
 def buscar(consulta: str, limite: int = LIMITE_RESULTADOS) -> str:
-    """Fragmentos mas parecidos a la consulta, cada uno con archivo, pagina y similitud."""
-    r = _coleccion().query(query_texts=[consulta], n_results=limite, include=["documents", "metadatas", "distances"])
+    """Fragmentos mas pertinentes (embeddings + BM25 combinados por RRF), con archivo y pagina."""
+    import numpy as np
+
+    fragmentos, vectores, bm25 = _indice()
+    densa = vectores @ _embeddings([INSTRUCCION_CONSULTA + consulta])[0]
+    lexica = np.array(bm25.puntajes(consulta))
+    rrf = np.zeros(len(fragmentos))
+    for puntaje in (densa, lexica):
+        rangos = np.argsort(np.argsort(-puntaje))
+        rrf += 1.0 / (RRF_K + rangos + 1)
     salida = []
-    for texto, meta, distancia in zip(r["documents"][0], r["metadatas"][0], r["distances"][0]):
-        similitud = 1 - distancia
-        if similitud < SIMILITUD_MINIMA:
-            continue
-        donde = f"{meta['archivo']}, página {meta['pagina']}" if meta["pagina"] else meta["archivo"]
-        salida.append(f"[Fuente: {donde} | similitud {similitud:.2f}]\n{texto}")
-    return "\n\n".join(salida) or "No se encontró contenido pertinente en los manuales para esa consulta."
+    for i in np.argsort(-rrf)[:limite]:
+        f = fragmentos[i]
+        donde = f"{f['archivo']}, página {f['pagina']} del PDF" if f["pagina"] else f["archivo"]
+        salida.append(f"[Fuente: {donde}]\n{f['texto']}")
+    return "\n\n".join(salida) or "No se encontró contenido en los manuales para esa consulta."
 
 
 class _EntradaRag(BaseModel):
@@ -291,6 +345,8 @@ class Calculadora(BaseTool):
     description: str = (
         "Calcula expresiones numéricas exactas. Úsala para todo cálculo del informe (masas, pares, inercias, "
         "fuerzas, tiempos, corrientes, sumas de BOM y puntajes ponderados) en lugar de calcular de memoria. "
+        "Reúne en una sola llamada todos los cálculos de una sección (por ejemplo, todo el BOM o toda la "
+        "evaluación de conceptos), con una línea por cálculo. "
         "Admite + - * / ** %, paréntesis, variables con 'nombre = expresión' separadas por ';', las funciones "
         "sqrt, sin, cos, tan, asin, acos, atan, atan2, radians, degrees, log, log10, exp, hypot, abs, min, max, "
         "round, sum y las constantes pi, e y g = 9.81. Trabaja sin unidades: usa unidades del SI y escribe en el "

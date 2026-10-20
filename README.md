@@ -18,7 +18,13 @@ El modelo derivado se crea una vez en el servidor de Ollama:
 ollama create qwen3.8-vdi -f Modelfile
 ```
 
-**Documentos del RAG.** Los manuales van en la carpeta `knowledge/` (PDF, TXT o MD) y no se publican en el repositorio por derechos de autor; se copian a mano. El índice se guarda en `.rag_db/` y se reconstruye solo cuando cambian los documentos. La primera vez se descarga el modelo de embeddings (all-MiniLM-L6-v2 en ONNX, en `~/.cache/chroma`), así que en un clúster el índice se construye en un nodo con internet:
+**Documentos del RAG.** Los manuales van en la carpeta `knowledge/` (PDF, TXT o MD) y no se publican en el repositorio por derechos de autor; se copian a mano. La búsqueda es híbrida: embeddings de `qwen3-embedding:0.6b`, servido por el mismo Ollama, combinados con BM25. El modelo de embeddings se descarga una vez:
+
+```bash
+ollama pull qwen3-embedding:0.6b
+```
+
+El índice se guarda en `.rag_db/` y se construye al empezar la corrida, solo cuando cambian los documentos, el modelo o la partición. Para probarlo sin lanzar la corrida, con Ollama en marcha:
 
 ```bash
 uv run python -m vdi.crews.vdicrew.herramientas "allowable torque axis 6"
@@ -48,6 +54,7 @@ El comando lista los documentos, construye el índice si hace falta y muestra el
    | `VDI_RUN_DIR` | Carpeta de salida de la corrida | `output/<fecha_hora>` |
    | `VDI_HERRAMIENTAS` | `0` apaga el RAG y la calculadora (configuración de las etapas anteriores) | Activas |
    | `VDI_KNOWLEDGE_DIR` | Otra carpeta de documentos para el RAG | `knowledge/` |
+   | `VDI_EMBEDDINGS` | Modelo de embeddings en Ollama para el RAG | `qwen3-embedding:0.6b` |
 
    Ejemplo: `VDI_REASONING_EFFORT=high VDI_CONTEXT_FILE=casos/banda.txt bash correr.sh`
 

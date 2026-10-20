@@ -96,7 +96,7 @@ class VdiFlow(Flow[VdiState]):
             # en vez de seguir con una herramienta que solo devuelve errores.
             herramientas.buscar("allowable payload")
             parametros["herramientas"].update({
-                "documentos_rag": herramientas.huella_documentos(),
+                "indice_rag": herramientas.huella_documentos(),
                 "max_consultas_rag_por_tarea": herramientas.MAX_CONSULTAS_RAG,
                 "max_usos_calculadora_por_tarea": herramientas.MAX_USOS_CALCULADORA,
                 "max_iteraciones_agente": MAX_ITERACIONES,
