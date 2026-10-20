@@ -213,10 +213,21 @@ def _indice():
                 fragmentos += [{"archivo": doc.name, "pagina": pagina, "texto": f} for f in _fragmentos(_limpiar(texto))]
             print(f"[VDI]   {doc.name}: {len(fragmentos) - n0} fragmentos", flush=True)
         vectores = _embeddings([f["texto"] for f in fragmentos])
+        # Escritura atomica (archivo temporal propio + os.replace): varias corridas en paralelo pueden
+        # construir el mismo indice a la vez sin que ninguna lea un archivo a medio escribir.
+        # La huella se escribe al final, cuando los otros dos ya estan completos.
         RAG_DB_DIR.mkdir(parents=True, exist_ok=True)
-        FRAGMENTOS_FILE.write_text(json.dumps(fragmentos, ensure_ascii=False), encoding="utf-8")
-        np.save(VECTORES_FILE, vectores)
-        HUELLA_FILE.write_text(json.dumps(huella, ensure_ascii=False, indent=1), encoding="utf-8")
+        sufijo = f".{os.getpid()}.tmp"
+        tmp = FRAGMENTOS_FILE.with_name(FRAGMENTOS_FILE.name + sufijo)
+        tmp.write_text(json.dumps(fragmentos, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, FRAGMENTOS_FILE)
+        tmp = VECTORES_FILE.with_name(VECTORES_FILE.name + sufijo)
+        with open(tmp, "wb") as f:
+            np.save(f, vectores)
+        os.replace(tmp, VECTORES_FILE)
+        tmp = HUELLA_FILE.with_name(HUELLA_FILE.name + sufijo)
+        tmp.write_text(json.dumps(huella, ensure_ascii=False, indent=1), encoding="utf-8")
+        os.replace(tmp, HUELLA_FILE)
         print("[VDI] Indice listo", flush=True)
     return fragmentos, vectores, _BM25([f["texto"] for f in fragmentos])
 
