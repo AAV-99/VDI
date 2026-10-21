@@ -7,7 +7,10 @@ requirements_ingestion_task:
     y portadores de función preliminares; (4) stakeholders y sus necesidades; (5) clasificación de necesidades; (6) matriz de necesidades;
     (7) requerimientos funcionales, requerimientos no funcionales, restricciones y especificaciones, cada uno con valor, unidad, límite y
     método de verificación; (8) cuantificación de los parámetros y variables de diseño; (9) matriz QFD etapa 1 de necesidades frente a
-    requerimientos, con la importancia técnica calculada. No hagas benchmarking: decláralo como actividad pendiente.
+    requerimientos, con la importancia técnica calculada; (10) benchmarking con al menos tres productos comerciales comparables
+    (fabricante y modelo, principio de sujeción, masa, carga o fuerza, precio si está publicado y URL de la fuente), y cómo fija o
+    ajusta los valores objetivo de las especificaciones. Si no tienes la herramienta buscar_web, declara el benchmarking como
+    actividad pendiente.
     REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -44,7 +47,8 @@ mechanical_subsystem_design_task:
     CONTENIDO OBLIGATORIO: (1) subfunciones y portadores de función mecánicos asignados por la arquitectura; (2) mecanismos, sujeción,
     transmisión o disipación adoptados para cumplir con {project_scope}; (3) dimensionamiento de los componentes críticos con cargas,
     materiales y factores de seguridad; (4) verificación de cada requerimiento asignado al dominio con su método; (5) interfaces mecánicas
-    con los otros dominios; (6) BOM Preliminar Mecánico con material o referencia, cantidad, masa y costo por línea y totales que sumen.
+    con los otros dominios; (6) BOM Preliminar Mecánico con material o referencia, cantidad, masa y costo por línea, la fuente de cada
+    costo (URL de la búsqueda o Supuesto) y totales que sumen.
     REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -63,7 +67,8 @@ electronic_subsystem_design_task:
     {primary_requirements}; (2) dimensionamiento de los componentes críticos, incluido el presupuesto de potencia y corriente; (3) análisis
     de integración de cada interfaz eléctrica y de señal con protocolo, niveles y compatibilidad, más la prueba de compatibilidad propuesta;
     (4) verificación de cada requerimiento asignado al dominio con su método; (5) BOM Preliminar Electrónico con referencia típica, cantidad,
-    masa y costo por línea y totales que sumen. No repitas en tu BOM componentes que ya estén en el BOM mecánico.
+    masa y costo por línea, la fuente de cada costo (URL de la búsqueda o Supuesto) y totales que sumen. No repitas en tu BOM
+    componentes que ya estén en el BOM mecánico.
     REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.

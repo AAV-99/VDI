@@ -7,7 +7,7 @@ from crewai.flow import Flow, listen, start
 
 from .corrida import RUN_DIR, registrar_fin, registrar_inicio
 from .crews.vdicrew import herramientas
-from .crews.vdicrew.vdicrew import (HERRAMIENTAS_ACTIVAS, LLM_CONFIG, MAX_ITERACIONES, MAX_PALABRAS,
+from .crews.vdicrew.vdicrew import (AGENTES_CON_WEB, BUSQUEDA_WEB_ACTIVA, HERRAMIENTAS_ACTIVAS, LLM_CONFIG, MAX_ITERACIONES, MAX_PALABRAS,
                                    MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID, VdiCrew)
 
 
@@ -100,7 +100,16 @@ class VdiFlow(Flow[VdiState]):
                 "max_consultas_rag_por_tarea": herramientas.MAX_CONSULTAS_RAG,
                 "max_usos_calculadora_por_tarea": herramientas.MAX_USOS_CALCULADORA,
                 "max_usos_matriz_por_tarea": herramientas.MAX_USOS_MATRIZ,
+                "busqueda_web": BUSQUEDA_WEB_ACTIVA,
                 "max_iteraciones_agente": MAX_ITERACIONES,
+            })
+        if BUSQUEDA_WEB_ACTIVA:
+            # Igual que con el indice: si la API de busqueda no responde, la corrida se detiene aqui.
+            herramientas.buscar_web("vacuum gripper end effector")
+            parametros["herramientas"].update({
+                "agentes_con_busqueda_web": sorted(AGENTES_CON_WEB),
+                "max_busquedas_web_por_tarea": herramientas.MAX_BUSQUEDAS_WEB,
+                "resultados_por_busqueda": herramientas.RESULTADOS_WEB,
             })
         registrar_inicio(LLM_CONFIG, inputs, parametros)
         

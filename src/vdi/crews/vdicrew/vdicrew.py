@@ -9,7 +9,8 @@ from crewai.project import CrewBase, agent, crew, task
 
 from ...corrida import RUN_DIR
 from ...registro_llm import RegistroLLM
-from .herramientas import MAX_CONSULTAS_RAG, MAX_USOS_CALCULADORA, MAX_USOS_MATRIZ, herramientas_agente
+from .herramientas import (MAX_BUSQUEDAS_WEB, MAX_CONSULTAS_RAG, MAX_USOS_CALCULADORA, MAX_USOS_MATRIZ, clave_tavily,
+                           herramientas_agente)
 
 # --- GUARDRAIL DE COMPLETITUD ---
 # Cada tarea debe cerrar su informe con MARCA_FIN (se pide en tasks.yaml).
@@ -85,9 +86,21 @@ HERRAMIENTAS_ACTIVAS = os.environ.get("VDI_HERRAMIENTAS", "1").strip() != "0"
 ARCHIVO_HERRAMIENTAS = Path(__file__).parent / "config" / "herramientas.md"
 if HERRAMIENTAS_ACTIVAS:
     METODOLOGIA += "\n\n" + ARCHIVO_HERRAMIENTAS.read_text(encoding="utf-8").strip()
+
+# Busqueda web (Tavily): solo para los agentes que hacen benchmarking o arman BOM con componentes comerciales.
+# Se activa si hay TAVILY_API_KEY; VDI_BUSQUEDA_WEB=0 la apaga. Sus reglas estan en busqueda_web.md.
+AGENTES_CON_WEB = {"team_lead", "mecanico", "electronico"}
+BUSQUEDA_WEB_PEDIDA = os.environ.get("VDI_BUSQUEDA_WEB", "1").strip() != "0"
+BUSQUEDA_WEB_ACTIVA = HERRAMIENTAS_ACTIVAS and BUSQUEDA_WEB_PEDIDA and bool(clave_tavily())
+if HERRAMIENTAS_ACTIVAS and BUSQUEDA_WEB_PEDIDA and not BUSQUEDA_WEB_ACTIVA:
+    print("[VDI] AVISO: no hay TAVILY_API_KEY; la corrida va SIN busqueda web.", flush=True)
+ARCHIVO_BUSQUEDA_WEB = Path(__file__).parent / "config" / "busqueda_web.md"
+if BUSQUEDA_WEB_ACTIVA:
+    METODOLOGIA += "\n\n" + ARCHIVO_BUSQUEDA_WEB.read_text(encoding="utf-8").strip()
 METODOLOGIA_ID = hashlib.sha256(METODOLOGIA.encode("utf-8")).hexdigest()[:12]
 # Con herramientas cada consulta o calculo es una iteracion mas del agente (el valor por defecto de CrewAI es 25)
-MAX_ITERACIONES = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA + MAX_USOS_MATRIZ if HERRAMIENTAS_ACTIVAS else 0)
+MAX_ITERACIONES = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA + MAX_USOS_MATRIZ if HERRAMIENTAS_ACTIVAS else 0) \
+    + (MAX_BUSQUEDAS_WEB if BUSQUEDA_WEB_ACTIVA else 0)
 
 # Configuracion del LLM. Se guarda tal cual en corrida.json.
 LLM_CONFIG = {
@@ -139,7 +152,7 @@ class VdiCrew:
             config=cfg,
             backstory=cfg["backstory"].rstrip() + "\n\n" + METODOLOGIA,
             llm=self.llm,
-            tools=herramientas_agente() if HERRAMIENTAS_ACTIVAS else [],
+            tools=herramientas_agente(web=BUSQUEDA_WEB_ACTIVA and nombre in AGENTES_CON_WEB) if HERRAMIENTAS_ACTIVAS else [],
             max_iter=MAX_ITERACIONES,
             verbose=True,
         )
