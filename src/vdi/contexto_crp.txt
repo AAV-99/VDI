@@ -8,7 +8,7 @@ Efector Final (Gripper) para Manipulación de Láminas de Acero con el robot ind
 ## ALCANCE DEL PROYECTO
 Diseño mecatrónico e integración de un efector final (gripper) de bajo costo para montaje directo en la brida de herramienta del robot industrial de 6 ejes CRP-RA09A-07 (carga útil máxima 7 kg, alcance 916 mm, repetibilidad ±0.03 mm), controlado desde el gabinete eléctrico CRP-G4-CD60.
 Brida de herramienta del robot: centrador exterior Ø65 h7, espiga Ø45 h7 de 3 mm de altura, agujero central Ø38, 6 agujeros roscados M5 de 9 mm de profundidad equidistantes en un círculo de Ø55 y un agujero para pasador de posicionamiento Ø4 (+0.1/0) de 5 mm de profundidad.
-La celda dispone de aire comprimido de la red de planta, y el cuerpo del robot trae dos conductos internos de aire hasta la muñeca.
+La celda dispone de aire comprimido de la red de planta. El robot del laboratorio tiene dos líneas de aire (verificado en el laboratorio); no se conocen su diámetro, su presión máxima ni la posición de sus salidas, y los manuales disponibles no las documentan.
 El sistema tomará láminas planas de acero AISI/SAE 1020 de 250x250x2 mm (~0.98 kg) provenientes directamente de una estación de corte láser (superficie seca, con posible presencia de rebaba o temperatura leve) y las alimentará a una celda de doblado o soldadura.
 El robot es industrial, no colaborativo, y opera dentro de una celda resguardada.
 Se debe proponer y justificar el principio de sujeción óptimo (mecánico, magnético, vacío o híbrido).

@@ -13,6 +13,10 @@ particion. Se construye al empezar la corrida (necesita Ollama con el modelo de 
 
 CALCULADORA. Evalua expresiones aritmeticas con funciones de math, sin eval de Python.
 
+MATRIZ PONDERADA. Calcula las tablas grandes que el modelo sumaba a mano en el razonamiento hasta
+agotar el tope de tokens (etapa C: 5 de 8 respuestas perdidas): la importancia tecnica del QFD y
+la evaluacion ponderada de conceptos.
+
 Cada agente recibe sus propias instancias de las herramientas, con un tope de usos por tarea
 (CrewAI reinicia el contador al empezar cada tarea). Cada uso queda en RUN_DIR/_herramientas.log.
 """
@@ -54,9 +58,10 @@ RRF_K = 60
 
 # Topes de uso por tarea. Evitan que un agente se quede consultando en vez de redactar el informe.
 MAX_CONSULTAS_RAG = 6
-# Con 25 usos la sintesis hacia un calculo por peticion y repetia el razonamiento en cada una
-# (corrida de prueba 22912: 16 peticiones y 107 000 tokens solo en esa tarea).
-MAX_USOS_CALCULADORA = 8
+# Con 25 usos la sintesis hacia un calculo por peticion (prueba 22912); con 8 los agentes hacian a mano
+# las tablas grandes hasta agotar el tope de tokens (etapa C). Las tablas van ahora a la matriz ponderada.
+MAX_USOS_CALCULADORA = 15
+MAX_USOS_MATRIZ = 6
 
 REGISTRO = RUN_DIR / "_herramientas.log"
 _lock = threading.Lock()
@@ -69,17 +74,17 @@ def _al_iniciar_tarea(source, event) -> None:
     _tarea_actual["nombre"] = getattr(tarea, "name", None) or "-"
 
 
-def _registrar(herramienta: str, entrada: str, resultado: str) -> None:
+def _registrar(herramienta: str, entrada: str, resultado: str, fuentes: str = "-") -> None:
     try:
         RUN_DIR.mkdir(parents=True, exist_ok=True)
         nuevo = not REGISTRO.exists()
         linea = "\t".join([
             datetime.now().isoformat(timespec="seconds"), _tarea_actual["nombre"], herramienta,
-            " ".join(entrada.split())[:300], str(len(resultado)), " ".join(resultado.split())[:200],
+            " ".join(entrada.split())[:300], str(len(resultado)), " ".join(resultado.split())[:200], fuentes,
         ])
         with _lock, open(REGISTRO, "a", encoding="utf-8") as f:
             if nuevo:
-                f.write("hora\ttarea\therramienta\tentrada\tchars_resultado\tinicio_resultado\n")
+                f.write("hora\ttarea\therramienta\tentrada\tchars_resultado\tinicio_resultado\tfuentes\n")
             f.write(linea + "\n")
     except OSError:
         pass  # el registro nunca debe tumbar la corrida
@@ -273,7 +278,9 @@ class BuscarManuales(BaseTool):
             resultado = buscar(query)
         except Exception as error:  # una consulta fallida no debe tumbar la tarea
             resultado = f"Error al consultar los manuales: {type(error).__name__}: {error}"
-        _registrar(self.name, query, resultado)
+        # Todas las fuentes devueltas (archivo|pagina), para verificar despues las citas de los informes
+        fuentes = ";".join(f"{a}|{p}" for a, p in re.findall(r"\[Fuente: (.+?), página (\d+) del PDF\]", resultado))
+        _registrar(self.name, query, resultado, fuentes or "-")
         return resultado
 
 
@@ -372,9 +379,89 @@ class Calculadora(BaseTool):
         return resultado
 
 
+# --- MATRIZ PONDERADA --------------------------------------------------------------------------
+
+def _lista(texto: str) -> list[str]:
+    return [x.strip() for x in re.split(r"[;\n]", texto) if x.strip()]
+
+
+def matriz_ponderada(tipo: str, columnas: str, filas: str, pesos: str) -> str:
+    """tipo 'qfd': un peso por fila (importancia de cada necesidad); devuelve por columna la suma de
+    peso x relacion. tipo 'evaluacion': un peso por columna (criterio); devuelve por fila la suma de
+    peso x puntaje. Las filas van como 'nombre: v1, v2, ...' separadas por ';' o salto de linea."""
+    tipo = tipo.strip().lower()
+    if tipo not in ("qfd", "evaluacion"):
+        return "Error: tipo debe ser 'qfd' o 'evaluacion'"
+    nombres_col = [c.strip() for c in columnas.split(",") if c.strip()]
+    try:
+        w = [float(x.replace(" ", "")) for x in re.split(r"[;,\s]+", pesos.strip()) if x]
+        nombres_fila, valores = [], []
+        for linea in _lista(filas):
+            if ":" not in linea:
+                return f"Error en la fila '{linea}': falta 'nombre: valores'"
+            nombre, resto = linea.split(":", 1)
+            v = [float(x) if x.strip() else 0.0 for x in resto.split(",")]
+            if len(v) != len(nombres_col):
+                return f"Error en la fila '{nombre.strip()}': tiene {len(v)} valores y hay {len(nombres_col)} columnas"
+            nombres_fila.append(nombre.strip())
+            valores.append(v)
+    except ValueError as error:
+        return f"Error: valor no numérico ({error})"
+    if not valores:
+        return "Error: no hay filas"
+    esperados = len(valores) if tipo == "qfd" else len(nombres_col)
+    if len(w) != esperados:
+        return f"Error: hay {len(w)} pesos y se esperaban {esperados} (uno por {'fila' if tipo == 'qfd' else 'columna'})"
+    if tipo == "qfd":
+        nombres, totales = nombres_col, [sum(w[i] * valores[i][j] for i in range(len(valores))) for j in range(len(nombres_col))]
+        encabezado = "Importancia técnica por columna (suma de peso de fila × relación)"
+    else:
+        nombres, totales = nombres_fila, [sum(w[j] * fila[j] for j in range(len(w))) for fila in valores]
+        encabezado = "Puntaje ponderado por fila (suma de peso de columna × puntaje)"
+    suma = sum(totales)
+    orden = sorted(range(len(totales)), key=lambda k: -totales[k])
+    lineas = [encabezado, "| Puesto | Elemento | Total | % del total |", "|---|---|---|---|"]
+    for puesto, k in enumerate(orden, 1):
+        pct = 100 * totales[k] / suma if suma else 0
+        lineas.append(f"| {puesto} | {nombres[k]} | {totales[k]:.6g} | {pct:.2f} |")
+    lineas.append(f"Suma de totales: {suma:.6g}. Suma de pesos: {sum(w):.6g}.")
+    if tipo == "evaluacion" and sum(w):
+        lineas.append("Puntaje normalizado (total / suma de pesos): " +
+                      ", ".join(f"{nombres[k]} = {totales[k] / sum(w):.4g}" for k in orden))
+    return "\n".join(lineas)
+
+
+class _EntradaMatriz(BaseModel):
+    tipo: str = Field(..., description="'qfd' (un peso por fila) o 'evaluacion' (un peso por columna).")
+    columnas: str = Field(..., description="Nombres de las columnas separados por comas. Ej.: 'RF-01, RF-02, RNF-01'")
+    filas: str = Field(..., description="Una fila por línea o separadas por ';', como 'nombre: v1, v2, v3'. "
+                                        "Ej.: 'N-01: 9, 3, 0; N-02: 1, 9, 3'. Celda vacía = 0; decimales con punto.")
+    pesos: str = Field(..., description="Pesos separados por comas, con punto decimal: uno por fila si tipo='qfd' (importancia de cada "
+                                        "necesidad), uno por columna si tipo='evaluacion' (peso de cada criterio).")
+
+
+class MatrizPonderada(BaseTool):
+    name: str = "matriz_ponderada"
+    description: str = (
+        "Calcula tablas ponderadas completas en una sola llamada. tipo='qfd': filas = necesidades con su "
+        "importancia como peso, columnas = requerimientos (o variables de diseño en el QFD etapa 2), valores = "
+        "relación 9/3/1/0; devuelve la importancia técnica de cada columna y su porcentaje. tipo='evaluacion': "
+        "filas = conceptos, columnas = criterios con su peso, valores = puntaje 1 a 5; devuelve el puntaje "
+        "ponderado de cada concepto y el orden. Úsala para el QFD y la evaluación de conceptos en lugar de "
+        "sumar a mano o con la calculadora."
+    )
+    args_schema: type[BaseModel] = _EntradaMatriz
+    max_usage_count: int | None = MAX_USOS_MATRIZ
+
+    def _run(self, tipo: str, columnas: str, filas: str, pesos: str) -> str:
+        resultado = matriz_ponderada(tipo, columnas, filas, pesos)
+        _registrar(self.name, f"{tipo} | {columnas} | {pesos}", resultado)
+        return resultado
+
+
 def herramientas_agente() -> list[BaseTool]:
     """Instancias nuevas para cada agente: cada una lleva su propio contador de usos por tarea."""
-    return [BuscarManuales(), Calculadora()]
+    return [BuscarManuales(), Calculadora(), MatrizPonderada()]
 
 
 if __name__ == "__main__":

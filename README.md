@@ -1,6 +1,6 @@
 # VDI 2206 — Sistema multiagente para diseño conceptual mecatrónico
 
-Flujo de **CrewAI** que desarrolla el diseño conceptual de un sistema mecatrónico según la guía **VDI/VDE 2206**, con un modelo de lenguaje local servido por **Ollama**. Seis agentes (integración de sistemas, mecánica, electrónica, software, RAMS y cliente) ejecutan ocho tareas en secuencia: requerimientos (Fase 1), síntesis del sistema (Fase 2), diseño por dominio, evaluación RAMS, revisión del cliente y dossier consolidado. Los agentes disponen de dos herramientas: consulta a los manuales técnicos del robot (RAG) y una calculadora.
+Flujo de **CrewAI** que desarrolla el diseño conceptual de un sistema mecatrónico según la guía **VDI/VDE 2206**, con un modelo de lenguaje local servido por **Ollama**. Seis agentes (integración de sistemas, mecánica, electrónica, software, RAMS y cliente) ejecutan ocho tareas en secuencia: requerimientos (Fase 1), síntesis del sistema (Fase 2), diseño por dominio, evaluación RAMS, revisión del cliente y dossier consolidado. Los agentes disponen de tres herramientas: consulta a los manuales técnicos del robot (RAG), una calculadora y una matriz ponderada para el QFD y la evaluación de conceptos.
 
 ## Requisitos del sistema
 
@@ -69,7 +69,7 @@ En un clúster con Slurm, el script de trabajo debe levantar Ollama dentro del t
 | `src/vdi/crews/vdicrew/config/tasks.yaml` | Instrucciones y entregable de cada tarea |
 | `src/vdi/crews/vdicrew/config/metodologia.md` | Contexto metodológico común (VDI 2206 y herramientas de diseño conceptual) que reciben todos los agentes |
 | `src/vdi/crews/vdicrew/config/herramientas.md` | Reglas de uso de las herramientas que reciben los agentes cuando están activas |
-| `src/vdi/crews/vdicrew/herramientas.py` | RAG de los manuales, calculadora y topes de uso por tarea |
+| `src/vdi/crews/vdicrew/herramientas.py` | RAG de los manuales, calculadora, matriz ponderada y topes de uso por tarea |
 | `src/vdi/crews/vdicrew/vdicrew.py` | Modelo y muestreo, límites de tokens y palabras, y guardrail de informes completos |
 
 ## Salidas

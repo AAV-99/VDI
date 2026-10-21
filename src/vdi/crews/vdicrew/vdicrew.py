@@ -9,7 +9,7 @@ from crewai.project import CrewBase, agent, crew, task
 
 from ...corrida import RUN_DIR
 from ...registro_llm import RegistroLLM
-from .herramientas import MAX_CONSULTAS_RAG, MAX_USOS_CALCULADORA, herramientas_agente
+from .herramientas import MAX_CONSULTAS_RAG, MAX_USOS_CALCULADORA, MAX_USOS_MATRIZ, herramientas_agente
 
 # --- GUARDRAIL DE COMPLETITUD ---
 # Cada tarea debe cerrar su informe con MARCA_FIN (se pide en tasks.yaml).
@@ -87,7 +87,7 @@ if HERRAMIENTAS_ACTIVAS:
     METODOLOGIA += "\n\n" + ARCHIVO_HERRAMIENTAS.read_text(encoding="utf-8").strip()
 METODOLOGIA_ID = hashlib.sha256(METODOLOGIA.encode("utf-8")).hexdigest()[:12]
 # Con herramientas cada consulta o calculo es una iteracion mas del agente (el valor por defecto de CrewAI es 25)
-MAX_ITERACIONES = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA if HERRAMIENTAS_ACTIVAS else 0)
+MAX_ITERACIONES = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA + MAX_USOS_MATRIZ if HERRAMIENTAS_ACTIVAS else 0)
 
 # Configuracion del LLM. Se guarda tal cual en corrida.json.
 LLM_CONFIG = {

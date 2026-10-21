@@ -99,6 +99,7 @@ class VdiFlow(Flow[VdiState]):
                 "indice_rag": herramientas.huella_documentos(),
                 "max_consultas_rag_por_tarea": herramientas.MAX_CONSULTAS_RAG,
                 "max_usos_calculadora_por_tarea": herramientas.MAX_USOS_CALCULADORA,
+                "max_usos_matriz_por_tarea": herramientas.MAX_USOS_MATRIZ,
                 "max_iteraciones_agente": MAX_ITERACIONES,
             })
         registrar_inicio(LLM_CONFIG, inputs, parametros)
