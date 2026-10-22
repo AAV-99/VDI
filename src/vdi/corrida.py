@@ -16,6 +16,14 @@ INICIO = datetime.now().astimezone()
 
 # VDI_RUN_DIR permite que correr.sh fije la carpeta y guarde ahi tambien el log.
 RUN_DIR = Path(os.environ.get("VDI_RUN_DIR") or Path("output") / INICIO.strftime("%Y-%m-%d_%H%M"))
+# CrewAI quita la barra inicial de las rutas absolutas en output_file y rechaza las que tienen '..': una carpeta
+# absoluta terminaria escrita dentro del directorio actual. Se convierte a relativa o se avisa antes de empezar.
+if RUN_DIR.is_absolute():
+    try:
+        RUN_DIR = RUN_DIR.resolve().relative_to(Path.cwd().resolve())
+    except ValueError:
+        raise ValueError(f"VDI_RUN_DIR={RUN_DIR} debe estar dentro de la carpeta desde la que se lanza la corrida "
+                         f"({Path.cwd()}): CrewAI no acepta rutas absolutas para los informes") from None
 ARCHIVO = RUN_DIR / "corrida.json"
 _RAIZ = Path(__file__).resolve().parents[2]
 

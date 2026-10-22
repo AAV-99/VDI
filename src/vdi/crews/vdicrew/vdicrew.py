@@ -1,3 +1,11 @@
+"""Agentes, tareas y modelo del sistema.
+
+Define el modelo (Qwen servido por Ollama) y su muestreo, el contexto metodologico comun que reciben todos
+los agentes (metodologia.md, mas las reglas de herramientas.md y busqueda_web.md cuando estan activas), los
+seis agentes con sus herramientas, las ocho tareas de la pasada inicial y el dossier, y el guardrail que
+verifica que cada informe llegue completo. Las tareas del ciclo de correccion se arman en src/vdi/ciclo.py
+a partir de tasks.yaml.
+"""
 import hashlib
 import os
 import re
@@ -80,16 +88,16 @@ def guardrail_informe_completo(tarea: str):
 ARCHIVO_METODOLOGIA = Path(__file__).parent / "config" / "metodologia.md"
 METODOLOGIA = ARCHIVO_METODOLOGIA.read_text(encoding="utf-8").strip()
 
-# Herramientas (RAG de los manuales y calculadora). VDI_HERRAMIENTAS=0 las apaga y reproduce las etapas
-# anteriores. Cuando estan activas, cada agente recibe tambien las reglas de uso de herramientas.md.
+# Herramientas (RAG de los manuales, calculadora y matriz ponderada). VDI_HERRAMIENTAS=0 las apaga y reproduce
+# las etapas anteriores. Cuando estan activas, cada agente recibe tambien las reglas de uso de herramientas.md.
 HERRAMIENTAS_ACTIVAS = os.environ.get("VDI_HERRAMIENTAS", "1").strip() != "0"
 ARCHIVO_HERRAMIENTAS = Path(__file__).parent / "config" / "herramientas.md"
 if HERRAMIENTAS_ACTIVAS:
     METODOLOGIA += "\n\n" + ARCHIVO_HERRAMIENTAS.read_text(encoding="utf-8").strip()
 
 # Busqueda web (Tavily): para los agentes que hacen benchmarking, seleccionan componentes comerciales o usan
-# datos de confiabilidad de fabricantes.
-# Se activa si hay TAVILY_API_KEY; VDI_BUSQUEDA_WEB=0 la apaga. Sus reglas estan en busqueda_web.md.
+# datos de confiabilidad de fabricantes. Se activa si hay TAVILY_API_KEY; VDI_BUSQUEDA_WEB=0 la apaga.
+# Sus reglas estan en busqueda_web.md.
 AGENTES_CON_WEB = {"team_lead", "mecanico", "electronico", "mantenimiento"}
 BUSQUEDA_WEB_PEDIDA = os.environ.get("VDI_BUSQUEDA_WEB", "1").strip() != "0"
 BUSQUEDA_WEB_ACTIVA = HERRAMIENTAS_ACTIVAS and BUSQUEDA_WEB_PEDIDA and bool(clave_tavily())
@@ -99,8 +107,9 @@ ARCHIVO_BUSQUEDA_WEB = Path(__file__).parent / "config" / "busqueda_web.md"
 if BUSQUEDA_WEB_ACTIVA:
     METODOLOGIA += "\n\n" + ARCHIVO_BUSQUEDA_WEB.read_text(encoding="utf-8").strip()
 METODOLOGIA_ID = hashlib.sha256(METODOLOGIA.encode("utf-8")).hexdigest()[:12]
-# Con herramientas cada consulta o calculo es una iteracion mas del agente (el valor por defecto de CrewAI es 25)
-MAX_ITERACIONES = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA + MAX_USOS_MATRIZ if HERRAMIENTAS_ACTIVAS else 0) \
+# Iteraciones de razonamiento de un agente en una tarea (max_iter de CrewAI, 25 por defecto). Con herramientas,
+# cada consulta o calculo es una iteracion mas. No confundir con las iteraciones del ciclo de correccion (ciclo.py).
+MAX_ITER_AGENTE = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA + MAX_USOS_MATRIZ if HERRAMIENTAS_ACTIVAS else 0) \
     + (MAX_BUSQUEDAS_WEB if BUSQUEDA_WEB_ACTIVA else 0)
 
 # Configuracion del LLM. Se guarda tal cual en corrida.json.
@@ -126,7 +135,7 @@ if ESFUERZO_RAZONAMIENTO:
 
 @CrewBase
 class VdiCrew:
-    """VDI 2206 Mechatronic Design Review Crew"""
+    """Agentes y tareas de la pasada inicial y del dossier (config/agents.yaml y config/tasks.yaml)."""
 
     agents_config = "config/agents.yaml"
     tasks_config = "config/tasks.yaml"
@@ -135,15 +144,6 @@ class VdiCrew:
     # Esta fijado en el servidor, en el Modelfile de qwen3.8-vdi (131072 tokens).
     # El interceptor anota cada respuesta del modelo en _llm.log y guarda las que llegan vacias en llm_vacias/.
     llm = LLM(**LLM_CONFIG, interceptor=RegistroLLM(RUN_DIR, MARCA_FIN))
-
-    """     # Configuración del LLM con control de tokens
-    llm = LLM(
-        model="gemini/gemini-3.5-flash", # O la versión habilitada en tu API
-        temperature=0.2,
-        max_tokens=4000,                  # Límite máximo de tokens por respuesta del agente
-        max_retries=4,                  # Límite de solicitudes por agente
-        timeout=120,               # Tiempo máximo de espera por solicitud
-    ) """
 
     def _agente(self, nombre: str) -> Agent:
         """Agente con su backstory de agents.yaml mas el contexto metodologico comun y, si estan
@@ -154,7 +154,7 @@ class VdiCrew:
             backstory=cfg["backstory"].rstrip() + "\n\n" + METODOLOGIA,
             llm=self.llm,
             tools=herramientas_agente(web=BUSQUEDA_WEB_ACTIVA and nombre in AGENTES_CON_WEB) if HERRAMIENTAS_ACTIVAS else [],
-            max_iter=MAX_ITERACIONES,
+            max_iter=MAX_ITER_AGENTE,
             verbose=True,
         )
 
@@ -183,7 +183,7 @@ class VdiCrew:
     def cliente(self) -> Agent:
         return self._agente("cliente")
 
-    # --- TAREAS CON SALIDA A ARCHIVOS INDIVIDUALES ---
+    # --- TAREAS DE LA PASADA INICIAL Y DOSSIER (cada una escribe su informe en RUN_DIR) ---
     @task
     def requirements_ingestion_task(self) -> Task:
         return Task(
@@ -258,6 +258,8 @@ class VdiCrew:
 
     @crew
     def crew(self) -> Crew:
+        """Crew con los seis agentes y las ocho tareas. ciclo.py lo usa para armar la pasada inicial y el
+        dossier; las tareas del ciclo de correccion se crean aparte."""
         return Crew(
             agents=self.agents,
             tasks=self.tasks,

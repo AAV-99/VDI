@@ -1,18 +1,19 @@
 [project]
 name = "vdi"
 version = "0.1.0"
-description = "VDI using crewAI"
-authors = [{ name = "Your Name", email = "you@example.com" }]
+description = "Sistema multiagente (CrewAI) para el diseño conceptual de sistemas mecatrónicos según la VDI/VDE 2206"
+authors = [{ name = "Andrés Arteaga" }]
 requires-python = ">=3.10,<3.14"
 dependencies = [
-    "crewai[google-genai,tools]>=1.15.17,<2.0.0",
+    "crewai>=1.15.17,<2.0.0",
+    "httpx",          # interceptor que registra cada respuesta del modelo (registro_llm.py)
+    "numpy",          # busqueda vectorial del RAG
+    "pymupdf",        # lectura de los manuales en PDF del RAG
+    "python-dotenv",  # TAVILY_API_KEY desde el archivo .env
 ]
 
 [project.scripts]
 kickoff = "vdi.main:kickoff"
-run_crew = "vdi.main:kickoff"
-plot = "vdi.main:plot"
-run_with_trigger = "vdi.main:run_with_trigger"
 
 [build-system]
 requires = ["hatchling"]
@@ -20,4 +21,3 @@ build-backend = "hatchling.build"
 
 [tool.crewai]
 type = "flow"
-project_id = "96075bb9-e299-4e91-acf4-09b7677fc4cf"

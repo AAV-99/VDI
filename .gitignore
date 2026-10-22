@@ -1,9 +1,12 @@
+# Entorno y secretos
 .env
+.venv/
 __pycache__/
-lib/
 .DS_Store
+
+# Resultados de las corridas
 output/
-corrida_*.log
+
 # Documentos del RAG y su indice: no se publican (derechos de autor). Se copian a mano.
 knowledge/
 .rag_db/

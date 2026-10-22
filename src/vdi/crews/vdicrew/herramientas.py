@@ -1,14 +1,14 @@
-"""Herramientas de los agentes: consulta a los manuales (RAG) y calculadora.
+"""Herramientas de los agentes: consulta a los manuales (RAG), calculadora, busqueda web y matriz ponderada.
 
 RAG. Indexa los documentos de knowledge/ (PDF, TXT o MD), que no van en Git y se copian a mano.
-Los PDF se leen pagina por pagina con PyMuPDF conservando la disposicion de las tablas, y el texto
-se parte en fragmentos de unos 1000 caracteres. La busqueda es hibrida: combina por rangos
-reciprocos (RRF) la similitud de embeddings (qwen3-embedding:0.6b, servido por el mismo Ollama de
-la corrida) con BM25, que favorece terminos exactos como Y00 o 16.2N.m. Es la mejor configuracion
-de la evaluacion diagnostico_rag (job 22918: acierto@1 0.95, acierto@4 1.0, MRR@4 0.975 en 20
-consultas, frente a 0.55, 0.8 y 0.658 del modelo ONNX MiniLM inicial).
-El indice queda en .rag_db/ y solo se reconstruye cuando cambian los documentos, el modelo o la
-particion. Se construye al empezar la corrida (necesita Ollama con el modelo de embeddings). Prueba:
+Los PDF se leen pagina por pagina con PyMuPDF conservando la disposicion de las tablas, se quitan los
+encabezados y pies repetidos, y el texto se parte en fragmentos de unos 1000 caracteres. La busqueda es
+hibrida: combina por rangos reciprocos (RRF) la similitud de embeddings (qwen3-embedding:0.6b, servido por
+el mismo Ollama de la corrida) con BM25, que favorece terminos exactos como Y00 o 16.2N.m. Es la mejor
+configuracion de la evaluacion diagnostico_rag (job 22918: acierto@1 0.95, acierto@4 1.0, MRR@4 0.975 en
+20 consultas, frente a 0.55, 0.8 y 0.658 del modelo ONNX MiniLM inicial). El indice queda en .rag_db/ y
+solo se reconstruye cuando cambian los documentos, el modelo o la particion; se construye al empezar la
+corrida (necesita Ollama con el modelo de embeddings). Prueba sin el crew:
     uv run python -m vdi.crews.vdicrew.herramientas "allowable torque axis 6"
 
 CALCULADORA. Evalua expresiones aritmeticas con funciones de math, sin eval de Python.
@@ -16,21 +16,22 @@ CALCULADORA. Evalua expresiones aritmeticas con funciones de math, sin eval de P
 BUSQUEDA WEB. Consulta la API de Tavily (TAVILY_API_KEY en el .env de la raiz o en el entorno) para el
 benchmarking de la Fase 1, la seleccion de componentes con su hoja de datos, datos de confiabilidad de
 fabricantes y consultas tecnicas. Usa la busqueda avanzada, que devuelve de cada pagina los fragmentos
-mas relacionados con la consulta (2 creditos por busqueda). Las URL quedan en _herramientas.log.
+mas relacionados con la consulta (2 creditos por busqueda).
 
 MATRIZ PONDERADA. Calcula las tablas grandes que el modelo sumaba a mano en el razonamiento hasta
 agotar el tope de tokens (etapa C: 5 de 8 respuestas perdidas): la importancia tecnica del QFD y
 la evaluacion ponderada de conceptos.
 
-Cada agente recibe sus propias instancias de las herramientas, con un tope de usos por tarea
-(CrewAI reinicia el contador al empezar cada tarea). Cada uso queda en RUN_DIR/_herramientas.log.
+Cada agente recibe sus propias instancias de las herramientas, con un tope de usos por tarea (CrewAI
+reinicia el contador al empezar cada tarea). Cada uso queda en RUN_DIR/_herramientas.log con la tarea que
+lo pidio y, para el RAG y la busqueda web, todas las fuentes devueltas (para verificar las citas).
 """
 import ast
-import re
 import json
 import math
 import operator
 import os
+import re
 import sys
 import threading
 import urllib.request
@@ -42,6 +43,7 @@ from pathlib import Path
 from crewai.events import crewai_event_bus
 from crewai.events.types.task_events import TaskStartedEvent
 from crewai.tools import BaseTool
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
 from ...corrida import RUN_DIR
@@ -73,20 +75,15 @@ FRAGMENTOS_POR_PAGINA = 3  # busqueda avanzada: fragmentos de cada pagina mas re
 CHARS_POR_RESULTADO_WEB = 1200  # extracto de cada pagina que recibe el agente (con 700 las especificaciones quedaban cortadas)
 TAVILY_URL = os.environ.get("VDI_TAVILY_URL", "https://api.tavily.com/search")  # otra URL solo para pruebas
 
-try:  # la clave de Tavily puede venir del .env de la raiz del proyecto
-    from dotenv import load_dotenv
-
-    load_dotenv(ROOT / ".env")
-except ImportError:
-    pass
-
-
-def clave_tavily() -> str:
-    return (os.environ.get("TAVILY_API_KEY") or "").strip()
+load_dotenv(ROOT / ".env")  # la clave de Tavily puede venir del .env de la raiz del proyecto
 
 REGISTRO = RUN_DIR / "_herramientas.log"
 _lock = threading.Lock()
 _tarea_actual = {"nombre": "-"}
+
+
+def clave_tavily() -> str:
+    return (os.environ.get("TAVILY_API_KEY") or "").strip()
 
 
 @crewai_event_bus.on(TaskStartedEvent)
@@ -129,6 +126,7 @@ def _huella_indice(docs: list[Path]) -> dict:
 
 
 def huella_documentos() -> dict:
+    """Huella del indice (documentos, modelo de embeddings y particion) para corrida.json."""
     return _huella_indice(documentos())
 
 
@@ -382,10 +380,10 @@ class _EntradaCalculadora(BaseModel):
 class Calculadora(BaseTool):
     name: str = "calculadora"
     description: str = (
-        "Calcula expresiones numéricas exactas. Úsala para todo cálculo del informe (masas, pares, inercias, "
-        "fuerzas, tiempos, corrientes, sumas de BOM y puntajes ponderados) en lugar de calcular de memoria. "
-        "Reúne en una sola llamada todos los cálculos de una sección (por ejemplo, todo el BOM o toda la "
-        "evaluación de conceptos), con una línea por cálculo. "
+        "Calcula expresiones numéricas exactas. Úsala para los cálculos del informe (masas, pares, inercias, "
+        "fuerzas, tiempos, corrientes y sumas de BOM) en lugar de calcular de memoria; para el QFD y la "
+        "evaluación de conceptos usa matriz_ponderada. Reúne en una sola llamada todos los cálculos de una "
+        "sección (por ejemplo, todo el BOM), con una línea por cálculo. "
         "Admite + - * / ** %, paréntesis, variables con 'nombre = expresión' separadas por ';', las funciones "
         "sqrt, sin, cos, tan, asin, acos, atan, atan2, radians, degrees, log, log10, exp, hypot, abs, min, max, "
         "round, sum y las constantes pi, e y g = 9.81. Trabaja sin unidades: usa unidades del SI y escribe en el "

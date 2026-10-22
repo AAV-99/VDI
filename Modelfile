@@ -1,2 +1,5 @@
+# Modelo qwen3.8-vdi que usa el crew: Qwen3.8 27B con la ventana de contexto ampliada.
+# CrewAI llama al endpoint /v1 de Ollama, que ignora num_ctx, por eso se fija aqui.
+# Crear en el servidor:  ollama create qwen3.8-vdi -f Modelfile
 FROM qwen3.8:27b-q4_K_M
 PARAMETER num_ctx 131072
