@@ -146,6 +146,11 @@ design_board_integration_task:
     COMPONENTES A COTIZAR: Incluye una tabla con los componentes comerciales del BOM final y las columnas: componente, especificación
     mínima, referencia candidata y precio estimado. Los precios del BOM son estimaciones; la cotización formal es una tarea pendiente del
     diseñador, y el cumplimiento de {target_cost} se declara verificado contra estimaciones.
+    CICLO DE CORRECCIÓN: Si el contexto incluye el historial del ciclo de corrección, las disciplinas ya corrigieron sus informes
+    para atender las ECR y el cliente verificó esas correcciones. En ese caso trabaja sobre las versiones más recientes de cada informe,
+    limita tus decisiones de integración a los conflictos entre dominios, los presupuestos de sistema y las ECR escaladas o de nivel
+    sistema, usa en la tabla de cierre el estado de la última verificación del cliente y agrega una columna con la iteración en que se
+    cerró cada ECR.
     TRAZABILIDAD DEL CONCEPTO: Resume la cadena necesidades, requerimientos, matriz morfológica, ruta factible, evaluación y concepto
     seleccionado, y actualiza la matriz de diseño axiomático con los parámetros finales.
     REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.
@@ -155,3 +160,61 @@ design_board_integration_task:
     El expediente final consolidado (Conceptual Design Dossier) completo en formato Markdown según la metodología VDI 2206,
     con la tabla de decisiones de integración, la tabla de cierre de ECR contra los criterios del cliente y un estado final coherente con ella.
   agent: team_lead
+
+# --- Tareas del ciclo de corrección (las arma src/vdi/ciclo.py) ---
+# [[MARCAS]] se reemplazan en el código antes de crear cada tarea; {variables} las interpola CrewAI.
+
+ecr_triage_task:
+  description: >
+    Triaje de las solicitudes de cambio (ECR) del cliente para {system_type}, iteración [[ITERACION]] del ciclo de corrección. Lee el
+    informe más reciente del cliente y la arquitectura de la síntesis del sistema. Para cada ECR que no esté en estado Cumple, decide qué
+    disciplina debe corregirla y si se puede corregir con diseño. Disciplinas: mecanica, electronica, software, rams o sistema. Usa
+    sistema solo si la corrección exige cambiar el concepto seleccionado o la arquitectura del producto: esas ECR no se corrigen en el
+    ciclo y quedan para la integración final. Si una ECR toca dos disciplinas, asígnala a la que debe cambiar primero; la otra revisará
+    el impacto. Tipos: corregible (un cambio de diseño de la disciplina la resuelve), prueba (requiere medición, ensayo, prototipo o
+    simulación que no se puede hacer en esta fase) o cotizacion (requiere una cotización formal). ECR escaladas, que ya fallaron dos
+    veces y no debes marcar como corregibles: [[ESCALADAS]].
+    FORMATO OBLIGATORIO: una tabla Markdown con exactamente estas columnas y en este orden: | ECR | Disciplina | Tipo | Justificación |.
+    En ECR escribe solo el identificador (por ejemplo ECR-03); en Disciplina y en Tipo, solo una de las palabras indicadas, sin tildes.
+    En Justificación, en una o dos frases, qué debe cambiar la disciplina y contra qué criterio del cliente. Después de la tabla, una
+    nota breve solo si hace falta.
+    CIERRE OBLIGATORIO: termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
+  expected_output: >
+    La tabla de triaje con una fila por ECR abierta: identificador, disciplina responsable, tipo y justificación.
+  agent: team_lead
+
+domain_correction_task:
+  description: >
+    Iteración [[ITERACION]] del ciclo de corrección para {system_type}. Eres responsable del dominio [[DOMINIO]] y debes corregir tu
+    informe anterior para atender lo que te asignó el líder de integración:
+    [[ECR_ASIGNADAS]]
+    Cambios que otras disciplinas ya hicieron en esta iteración (tenlos en cuenta en tus interfaces):
+    [[CAMBIOS_PREVIOS]]
+    REGLA DE CORRECCIÓN: para cada ECR asignada, haz el cambio de diseño necesario con su cálculo, o demuestra con un cálculo que el
+    valor original ya cumple el criterio de aceptación del cliente. No cambies el principio de solución ni la arquitectura; si una ECR
+    lo exige, decláralo con el cálculo que lo demuestra. No cambies lo que no esté relacionado con lo asignado.
+    ENTREGA: el informe completo y actualizado de tu dominio, con la misma estructura que el anterior, que empiece con la sección
+    "## Cambios de la iteración [[ITERACION]]" y en ella una tabla Markdown con las columnas | ECR | Parámetro | Valor anterior |
+    Valor nuevo | Cálculo o justificación | Impacto en otros dominios |. En Impacto en otros dominios escribe ninguno, o los dominios
+    afectados (mecanica, electronica, software, rams) y qué cambia para ellos (masa, potencia, señal, tiempo). Si resuelves una ECR
+    demostrando que el valor original cumple, regístrala con el mismo valor anterior y nuevo. Recalcula los totales afectados.
+    EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras.
+    CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
+  expected_output: >
+    El informe completo y actualizado del dominio, que empieza con la tabla de cambios de la iteración.
+  agent: mecanico
+
+client_verification_task:
+  description: >
+    Iteración [[ITERACION]] del ciclo de corrección para {system_type}: verifica las correcciones de las disciplinas. ECR atendidas en
+    esta iteración: [[ECR_ITERACION]]. Revisa los informes corregidos y sus tablas de cambios, y compara la evidencia de cada ECR
+    atendida con tu criterio de aceptación literal. Si un cambio rompió algo que ya cumplía, o encuentras un problema nuevo en lo que se
+    modificó, abre una ECR nueva con el siguiente número disponible y un criterio de aceptación verificable.
+    FORMATO OBLIGATORIO: una tabla Markdown con todas las ECR que no estaban en estado Cumple antes de esta iteración más las nuevas, con
+    exactamente estas columnas: | ECR | Criterio de aceptación | Estado | Evidencia |. El Estado solo puede ser Cumple, No cumple o
+    Pendiente de prueba (requiere medición, ensayo, prototipo, simulación o cotización que no se ha hecho). Para una ECR nueva escribe
+    en Evidencia "Nueva" y el motivo. Después de la tabla, un dictamen breve.
+    CIERRE OBLIGATORIO: termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
+  expected_output: >
+    La tabla de verificación con el estado de cada ECR abierta y las ECR nuevas, y un dictamen breve.
+  agent: cliente

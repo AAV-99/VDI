@@ -1,6 +1,6 @@
 # VDI 2206 — Sistema multiagente para diseño conceptual mecatrónico
 
-Flujo de **CrewAI** que desarrolla el diseño conceptual de un sistema mecatrónico según la guía **VDI/VDE 2206**, con un modelo de lenguaje local servido por **Ollama**. Seis agentes (integración de sistemas, mecánica, electrónica, software, RAMS y cliente) ejecutan ocho tareas en secuencia: requerimientos (Fase 1), síntesis del sistema (Fase 2), diseño por dominio, evaluación RAMS, revisión del cliente y dossier consolidado. Los agentes disponen de consulta a los manuales técnicos del robot (RAG), una calculadora y una matriz ponderada para el QFD y la evaluación de conceptos; el líder de integración y los ingenieros mecánico, electrónico y RAMS pueden además buscar en internet (benchmarking, selección de componentes con su hoja de datos, datos de confiabilidad y consultas técnicas; los precios son estimaciones).
+Flujo de **CrewAI** que desarrolla el diseño conceptual de un sistema mecatrónico según la guía **VDI/VDE 2206**, con un modelo de lenguaje local servido por **Ollama**. Seis agentes (integración de sistemas, mecánica, electrónica, software, RAMS y cliente) desarrollan el diseño en tres partes: una pasada inicial (requerimientos o Fase 1, síntesis del sistema o Fase 2, diseño por dominio, evaluación RAMS y revisión del cliente), un ciclo de corrección y el dossier consolidado. En el ciclo, el líder de integración asigna cada solicitud de cambio (ECR) del cliente a la disciplina responsable, solo esas disciplinas corrigen su informe y el cliente verifica las correcciones; se repite hasta 3 veces o hasta que no queden ECR corregibles. Los agentes disponen de consulta a los manuales técnicos del robot (RAG), una calculadora y una matriz ponderada para el QFD y la evaluación de conceptos; el líder de integración y los ingenieros mecánico, electrónico y RAMS pueden además buscar en internet (benchmarking, selección de componentes con su hoja de datos, datos de confiabilidad y consultas técnicas; los precios son estimaciones).
 
 ## Requisitos del sistema
 
@@ -52,6 +52,7 @@ El comando lista los documentos, construye el índice si hace falta y muestra el
    | `VDI_REASONING_EFFORT` | Esfuerzo de razonamiento del modelo: `low`, `medium`, `high` o `xhigh` | El del modelo |
    | `VDI_CONTEXT_FILE` | Otro archivo de contexto (otro caso de estudio) | `src/vdi/contexto.txt` |
    | `VDI_RUN_DIR` | Carpeta de salida de la corrida | `output/<fecha_hora>` |
+   | `VDI_CICLOS` | Máximo de iteraciones del ciclo de corrección; `0` lo apaga (flujo de las etapas anteriores) | `3` |
    | `VDI_HERRAMIENTAS` | `0` apaga el RAG y la calculadora (configuración de las etapas anteriores) | Activas |
    | `VDI_KNOWLEDGE_DIR` | Otra carpeta de documentos para el RAG | `knowledge/` |
    | `VDI_EMBEDDINGS` | Modelo de embeddings en Ollama para el RAG | `qwen3-embedding:0.6b` |
@@ -60,7 +61,7 @@ El comando lista los documentos, construye el índice si hace falta y muestra el
 
    Ejemplo: `VDI_REASONING_EFFORT=high VDI_CONTEXT_FILE=casos/banda.txt bash correr.sh`
 
-Si una tarea falla (por ejemplo, el modelo responde vacío varias veces seguidas), la corrida se reanuda hasta 2 veces desde la primera tarea sin informe, con los informes ya escritos como contexto.
+Si una tarea falla (por ejemplo, el modelo responde vacío varias veces seguidas), la corrida se reanuda hasta 2 veces desde el primer paso sin informe, con los informes ya escritos como contexto.
 
 En un clúster con Slurm, el script de trabajo debe levantar Ollama dentro del trabajo, exportar `OLLAMA_HOST` y `VDI_RUN_DIR`, y ejecutar `uv run kickoff`.
 
@@ -75,6 +76,7 @@ En un clúster con Slurm, el script de trabajo debe levantar Ollama dentro del t
 | `src/vdi/crews/vdicrew/config/herramientas.md` | Reglas de uso de las herramientas que reciben los agentes cuando están activas |
 | `src/vdi/crews/vdicrew/config/busqueda_web.md` | Reglas de la búsqueda web (para qué se usa, citas con URL, qué vale como dato) |
 | `src/vdi/crews/vdicrew/herramientas.py` | RAG de los manuales, calculadora, matriz ponderada y topes de uso por tarea |
+| `src/vdi/ciclo.py` | Orquestación de la corrida: pasada inicial, ciclo de corrección e integración final |
 | `src/vdi/crews/vdicrew/vdicrew.py` | Modelo y muestreo, límites de tokens y palabras, y guardrail de informes completos |
 
 ## Salidas
@@ -90,6 +92,10 @@ Cada corrida queda en su propia carpeta dentro de `output/` (ignorada por Git):
 | `04_software_architecture.md` | Arquitectura de software o firmware, sin código |
 | `05_rams_maintenance.md` | Evaluación RAMS y estrategia PHM |
 | `06_client_acceptance.md` | Matriz de conformidad, solicitudes de cambio (ECR) y dictamen del cliente |
+| `07_triaje_itN.md` | Triaje de la iteración N: disciplina y tipo de cada ECR abierta |
+| `02_..._vN.md`, `03_..._vN.md`, … | Versión N de un informe de dominio corregido en el ciclo, con su tabla de cambios al inicio |
+| `06_client_acceptance_vN.md` | Verificación del cliente al final de la iteración N−1: estado de cada ECR y ECR nuevas |
+| `_iteraciones.json` | Historial del ciclo: ECR asignadas, disciplinas que corrigieron, ECR cerradas, fallidas, nuevas y escaladas, y tokens por iteración |
 | `00_vdi2206_consolidated_dossier.md` | Dossier consolidado con decisiones de integración y cierre de ECR |
 | `corrida.json` | Commit, configuración del modelo, entradas, parámetros y tiempos de la corrida; si una tarea falló, las reanudaciones (tarea y motivo) |
 | `_guardrail.log` | Resultado de la verificación de completitud de cada informe |

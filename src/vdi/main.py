@@ -5,6 +5,7 @@ from pathlib import Path
 from pydantic import BaseModel
 from crewai.flow import Flow, listen, start
 
+from . import ciclo
 from .corrida import RUN_DIR, registrar_evento, registrar_fin, registrar_inicio
 from .crews.vdicrew import herramientas
 from .crews.vdicrew.vdicrew import _registrar as _registrar_guardrail
@@ -113,12 +114,10 @@ class VdiFlow(Flow[VdiState]):
                 "resultados_por_busqueda": herramientas.RESULTADOS_WEB,
             })
         parametros["max_reanudaciones"] = MAX_REANUDACIONES
+        parametros["ciclo_correccion"] = {"max_iteraciones": ciclo.MAX_CICLOS, "max_fallos_por_ecr": ciclo.MAX_FALLOS_ECR}
         registrar_inicio(LLM_CONFIG, inputs, parametros)
 
-        try:
-            result = VdiCrew().crew().kickoff(inputs=inputs)
-        except Exception as error:
-            result = _reanudar(inputs, error)
+        result = _ejecutar_con_reanudacion(inputs)
 
         print("VDI 2206 Design review completed")
         self.state.final_design = result.raw
@@ -134,25 +133,23 @@ class VdiFlow(Flow[VdiState]):
 
 
 # Si una tarea falla (por ejemplo, el modelo responde vacio varias veces seguidas y CrewAI aborta), la corrida
-# se reanuda desde la primera tarea sin informe, con los informes ya escritos como contexto. Cada reanudacion
-# queda en corrida.json (clave "reanudaciones") y en _guardrail.log.
+# se reanuda: ciclo.ejecutar() salta los pasos que ya tienen informe y continua desde el primero que falta.
+# Cada reanudacion queda en corrida.json (clave "reanudaciones") y en _guardrail.log.
 MAX_REANUDACIONES = 2
 
 
-def _reanudar(inputs: dict, error: Exception):
-    for intento in range(1, MAX_REANUDACIONES + 1):
-        crew, tarea = VdiCrew().crew_reanudado()
-        if crew is None:
-            raise error  # todos los informes existen: el fallo no fue de una tarea, no hay nada que reanudar
-        motivo = f"{type(error).__name__}: {' '.join(str(error).split())[:300]}"
-        print(f"[VDI] La tarea {tarea} fallo ({motivo}). Reanudacion {intento} de {MAX_REANUDACIONES}.", flush=True)
-        registrar_evento("reanudaciones", {"intento": intento, "tarea": tarea, "motivo": motivo})
-        _registrar_guardrail(tarea, "REANUDACION", f"intento {intento}: {motivo}", "")
+def _ejecutar_con_reanudacion(inputs: dict):
+    for intento in range(MAX_REANUDACIONES + 1):
         try:
-            return crew.kickoff(inputs=inputs)
-        except Exception as nuevo:
-            error = nuevo
-    raise error
+            return ciclo.ejecutar(inputs)
+        except Exception as error:
+            if intento == MAX_REANUDACIONES:
+                raise
+            tarea = ciclo.PASO_ACTUAL["tarea"]
+            motivo = f"{type(error).__name__}: {' '.join(str(error).split())[:300]}"
+            print(f"[VDI] La tarea {tarea} fallo ({motivo}). Reanudacion {intento + 1} de {MAX_REANUDACIONES}.", flush=True)
+            registrar_evento("reanudaciones", {"intento": intento + 1, "tarea": tarea, "motivo": motivo})
+            _registrar_guardrail(tarea, "REANUDACION", f"intento {intento + 1}: {motivo}", "")
 
 
 def _salida_inmediata(signum, frame):
