@@ -88,9 +88,10 @@ ARCHIVO_HERRAMIENTAS = Path(__file__).parent / "config" / "herramientas.md"
 if HERRAMIENTAS_ACTIVAS:
     METODOLOGIA += "\n\n" + ARCHIVO_HERRAMIENTAS.read_text(encoding="utf-8").strip()
 
-# Busqueda web (Tavily): solo para los agentes que hacen benchmarking o arman BOM con componentes comerciales.
+# Busqueda web (Tavily): para los agentes que hacen benchmarking, seleccionan componentes comerciales o usan
+# datos de confiabilidad de fabricantes.
 # Se activa si hay TAVILY_API_KEY; VDI_BUSQUEDA_WEB=0 la apaga. Sus reglas estan en busqueda_web.md.
-AGENTES_CON_WEB = {"team_lead", "mecanico", "electronico"}
+AGENTES_CON_WEB = {"team_lead", "mecanico", "electronico", "mantenimiento"}
 BUSQUEDA_WEB_PEDIDA = os.environ.get("VDI_BUSQUEDA_WEB", "1").strip() != "0"
 BUSQUEDA_WEB_ACTIVA = HERRAMIENTAS_ACTIVAS and BUSQUEDA_WEB_PEDIDA and bool(clave_tavily())
 if HERRAMIENTAS_ACTIVAS and BUSQUEDA_WEB_PEDIDA and not BUSQUEDA_WEB_ACTIVA:

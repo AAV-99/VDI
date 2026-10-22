@@ -14,8 +14,9 @@ particion. Se construye al empezar la corrida (necesita Ollama con el modelo de 
 CALCULADORA. Evalua expresiones aritmeticas con funciones de math, sin eval de Python.
 
 BUSQUEDA WEB. Consulta la API de Tavily (TAVILY_API_KEY en el .env de la raiz o en el entorno) para el
-benchmarking de la Fase 1 y para hojas de datos y precios de componentes. Devuelve titulo, URL y un
-extracto de cada resultado; las URL quedan en _herramientas.log para verificar las citas.
+benchmarking de la Fase 1, la seleccion de componentes con su hoja de datos, datos de confiabilidad de
+fabricantes y consultas tecnicas. Usa la busqueda avanzada, que devuelve de cada pagina los fragmentos
+mas relacionados con la consulta (2 creditos por busqueda). Las URL quedan en _herramientas.log.
 
 MATRIZ PONDERADA. Calcula las tablas grandes que el modelo sumaba a mano en el razonamiento hasta
 agotar el tope de tokens (etapa C: 5 de 8 respuestas perdidas): la importancia tecnica del QFD y
@@ -68,7 +69,8 @@ MAX_USOS_CALCULADORA = 15
 MAX_USOS_MATRIZ = 6
 MAX_BUSQUEDAS_WEB = 5
 RESULTADOS_WEB = 5
-CHARS_POR_RESULTADO_WEB = 700  # extracto de cada pagina que recibe el agente
+FRAGMENTOS_POR_PAGINA = 3  # busqueda avanzada: fragmentos de cada pagina mas relacionados con la consulta
+CHARS_POR_RESULTADO_WEB = 1200  # extracto de cada pagina que recibe el agente (con 700 las especificaciones quedaban cortadas)
 TAVILY_URL = os.environ.get("VDI_TAVILY_URL", "https://api.tavily.com/search")  # otra URL solo para pruebas
 
 try:  # la clave de Tavily puede venir del .env de la raiz del proyecto
@@ -402,8 +404,8 @@ class Calculadora(BaseTool):
 
 def buscar_web(consulta: str) -> tuple[str, list[str]]:
     """Resultados de Tavily como texto para el agente, y la lista de URL devueltas."""
-    cuerpo = json.dumps({"query": consulta, "search_depth": "basic", "max_results": RESULTADOS_WEB,
-                         "include_answer": False, "include_raw_content": False}).encode()
+    cuerpo = json.dumps({"query": consulta, "search_depth": "advanced", "chunks_per_source": FRAGMENTOS_POR_PAGINA,
+                         "max_results": RESULTADOS_WEB, "include_answer": False, "include_raw_content": False}).encode()
     req = urllib.request.Request(TAVILY_URL, data=cuerpo, headers={
         "Content-Type": "application/json", "Authorization": f"Bearer {clave_tavily()}"})
     with urllib.request.urlopen(req, timeout=60) as r:
@@ -420,16 +422,17 @@ def buscar_web(consulta: str) -> tuple[str, list[str]]:
 
 class _EntradaWeb(BaseModel):
     query: str = Field(..., description="Consulta concreta, de preferencia en inglés (por ejemplo: "
-                                        "'vacuum ejector 24V datasheet price' o 'sheet metal vacuum gripper robot payload 7 kg').")
+                                        "'vacuum ejector suction flow datasheet 6 bar' o 'solenoid valve 24 V coil current 5/2').")
 
 
 class BuscarWeb(BaseTool):
     name: str = "buscar_web"
     description: str = (
-        "Busca en internet y devuelve hasta 5 resultados con título, URL, fecha de consulta y un extracto. "
-        "Úsala para el benchmarking de productos comparables y para hojas de datos y precios de componentes "
-        "comerciales. Cita en el informe la URL de cada dato que tomes de un resultado. El extracto puede no "
-        "contener el dato completo: si no aparece, el dato es Supuesto."
+        "Busca en internet y devuelve hasta 5 resultados con título, URL, fecha de consulta y los fragmentos de "
+        "cada página más relacionados con la consulta. Úsala para el benchmarking de productos comparables, para "
+        "seleccionar componentes comerciales con su hoja de datos, para datos de confiabilidad de fabricantes y "
+        "para consultas técnicas puntuales. No la uses para precios. Cita en el informe la URL de cada dato que "
+        "tomes de un resultado; si el dato no aparece en los fragmentos, es Supuesto."
     )
     args_schema: type[BaseModel] = _EntradaWeb
     max_usage_count: int | None = MAX_BUSQUEDAS_WEB

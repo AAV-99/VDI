@@ -7,10 +7,10 @@ requirements_ingestion_task:
     y portadores de función preliminares; (4) stakeholders y sus necesidades; (5) clasificación de necesidades; (6) matriz de necesidades;
     (7) requerimientos funcionales, requerimientos no funcionales, restricciones y especificaciones, cada uno con valor, unidad, límite y
     método de verificación; (8) cuantificación de los parámetros y variables de diseño; (9) matriz QFD etapa 1 de necesidades frente a
-    requerimientos, con la importancia técnica calculada; (10) benchmarking con al menos tres productos comerciales comparables
-    (fabricante y modelo, principio de sujeción, masa, carga o fuerza, precio si está publicado y URL de la fuente), y cómo fija o
-    ajusta los valores objetivo de las especificaciones. Si no tienes la herramienta buscar_web, declara el benchmarking como
-    actividad pendiente.
+    requerimientos, con la importancia técnica calculada; (10) benchmarking con al menos tres productos completos comparables, es decir,
+    grippers o efectores finales y no componentes sueltos como eyectores o válvulas (fabricante y modelo, principio de sujeción, masa,
+    carga o fuerza y URL de la fuente), y cómo fija o ajusta los valores objetivo de las especificaciones. Si no tienes la herramienta
+    buscar_web, declara el benchmarking como actividad pendiente.
     REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -25,7 +25,8 @@ system_synthesis_task:
     el contexto metodológico común. Esta es la etapa de diseño del sistema del modelo en V de la VDI 2206: aquí se elige el concepto y se
     reparten las funciones entre los dominios; las disciplinas lo desarrollarán después.
     CONTENIDO OBLIGATORIO, en este orden: (1) validación y reestructuración de la caja negra y la estructura funcional; (2) matriz morfológica
-    con al menos tres principios de solución por subfunción; (3) rutas factibles con al menos tres conceptos diferentes; (4) evaluación de
+    con al menos tres principios de solución por subfunción; (3) rutas factibles con al menos tres conceptos diferentes y, para cada uno, un componente comercial existente
+    que materialice su principio crítico, con su URL si tienes buscar_web (disponibilidad comercial); (4) evaluación de
     conceptos con pesos derivados del QFD etapa 1 y el cálculo de cada puntaje; (5) concepto seleccionado y su justificación frente a
     {primary_requirements}; (6) arquitectura del producto con módulos, asignación de subfunciones a módulos y dominios, e interfaces entre
     módulos; (7) matriz QFD etapa 2 de requerimientos frente a variables de diseño; (8) matriz de diseño axiomático con su diagnóstico de
@@ -47,8 +48,10 @@ mechanical_subsystem_design_task:
     CONTENIDO OBLIGATORIO: (1) subfunciones y portadores de función mecánicos asignados por la arquitectura; (2) mecanismos, sujeción,
     transmisión o disipación adoptados para cumplir con {project_scope}; (3) dimensionamiento de los componentes críticos con cargas,
     materiales y factores de seguridad; (4) verificación de cada requerimiento asignado al dominio con su método; (5) interfaces mecánicas
-    con los otros dominios; (6) BOM Preliminar Mecánico con material o referencia, cantidad, masa y costo por línea, la fuente de cada
-    costo (URL de la búsqueda o Supuesto) y totales que sumen.
+    con los otros dominios; (6) selección de componentes comerciales en una tabla con la especificación requerida por tu cálculo, el
+    modelo comercial candidato, el valor de su hoja de datos, si cumple y la fuente (URL, o Supuesto si no la tienes o no trae el valor);
+    (7) BOM Preliminar Mecánico con material o referencia, cantidad, masa y costo por línea y totales que sumen. Los costos son
+    estimaciones: márcalos como Supuesto e indica el criterio (precio típico del componente, o material por masa más mecanizado).
     REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -66,9 +69,11 @@ electronic_subsystem_design_task:
     CONTENIDO OBLIGATORIO: (1) arquitectura de instrumentación, sensores, actuadores, potencia y comunicación para responder a
     {primary_requirements}; (2) dimensionamiento de los componentes críticos, incluido el presupuesto de potencia y corriente; (3) análisis
     de integración de cada interfaz eléctrica y de señal con protocolo, niveles y compatibilidad, más la prueba de compatibilidad propuesta;
-    (4) verificación de cada requerimiento asignado al dominio con su método; (5) BOM Preliminar Electrónico con referencia típica, cantidad,
-    masa y costo por línea, la fuente de cada costo (URL de la búsqueda o Supuesto) y totales que sumen. No repitas en tu BOM
-    componentes que ya estén en el BOM mecánico.
+    (4) verificación de cada requerimiento asignado al dominio con su método; (5) selección de componentes comerciales en una tabla con la
+    especificación requerida (por ejemplo corriente de bobina frente al límite de las salidas, tensión, tipo de salida, tiempo de respuesta),
+    el modelo comercial candidato, el valor de su hoja de datos, si cumple y la fuente (URL, o Supuesto si no la tienes o no trae el valor);
+    (6) BOM Preliminar Electrónico con referencia típica, cantidad, masa y costo por línea y totales que sumen. Los costos son
+    estimaciones: márcalos como Supuesto e indica el criterio. No repitas en tu BOM componentes que ya estén en el BOM mecánico.
     REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -98,7 +103,8 @@ maintenance_rams_eval_task:
   description: >
     Evaluar Confiabilidad, Disponibilidad, Mantenibilidad y Seguridad (RAMS) para {system_type} en el marco de
     {project_scope}. Definir la modularidad para reemplazo rápido de piezas y proponer la estrategia de
-    diagnóstico o monitoreo de condición (PHM).
+    diagnóstico o monitoreo de condición (PHM). Para tasas de falla y vida útil usa los datos de los fabricantes de los componentes
+    seleccionados (B10d, MTTF, ciclos de vida) cuando los encuentres, citando su fuente; si no, márcalos como Supuesto.
     REGLA DE FORMATO: Presenta matrices de riesgo, estimaciones RAMS y estrategias PHM en tablas cuantitativas claras y diagramas de flujo en sintaxis Mermaid (```mermaid).
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -137,6 +143,9 @@ design_board_integration_task:
     Cumple, No cumple o Pendiente de prueba. Usa Cumple únicamente si la evidencia o el cálculo presentado satisface el criterio citado. Todo criterio que requiera medición, ensayo,
     prototipo, simulación o cotización que no se haya hecho es Pendiente de prueba. No afirmes análisis, pruebas ni cotizaciones que no se realizaron.
     El estado final del dossier debe ser coherente con esa tabla: si alguna ECR queda en No cumple o Pendiente de prueba, el diseño no puede declararse aprobado sin condiciones.
+    COMPONENTES A COTIZAR: Incluye una tabla con los componentes comerciales del BOM final y las columnas: componente, especificación
+    mínima, referencia candidata y precio estimado. Los precios del BOM son estimaciones; la cotización formal es una tarea pendiente del
+    diseñador, y el cumplimiento de {target_cost} se declara verificado contra estimaciones.
     TRAZABILIDAD DEL CONCEPTO: Resume la cadena necesidades, requerimientos, matriz morfológica, ruta factible, evaluación y concepto
     seleccionado, y actualiza la matriz de diseño axiomático con los parámetros finales.
     REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.
