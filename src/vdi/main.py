@@ -5,8 +5,9 @@ from pathlib import Path
 from pydantic import BaseModel
 from crewai.flow import Flow, listen, start
 
-from .corrida import RUN_DIR, registrar_fin, registrar_inicio
+from .corrida import RUN_DIR, registrar_evento, registrar_fin, registrar_inicio
 from .crews.vdicrew import herramientas
+from .crews.vdicrew.vdicrew import _registrar as _registrar_guardrail
 from .crews.vdicrew.vdicrew import (AGENTES_CON_WEB, BUSQUEDA_WEB_ACTIVA, HERRAMIENTAS_ACTIVAS, LLM_CONFIG, MAX_ITERACIONES, MAX_PALABRAS,
                                    MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID, VdiCrew)
 
@@ -111,13 +112,13 @@ class VdiFlow(Flow[VdiState]):
                 "max_busquedas_web_por_tarea": herramientas.MAX_BUSQUEDAS_WEB,
                 "resultados_por_busqueda": herramientas.RESULTADOS_WEB,
             })
+        parametros["max_reanudaciones"] = MAX_REANUDACIONES
         registrar_inicio(LLM_CONFIG, inputs, parametros)
-        
-        result = (
-            VdiCrew()
-            .crew()
-            .kickoff(inputs=inputs)
-        )
+
+        try:
+            result = VdiCrew().crew().kickoff(inputs=inputs)
+        except Exception as error:
+            result = _reanudar(inputs, error)
 
         print("VDI 2206 Design review completed")
         self.state.final_design = result.raw
@@ -130,6 +131,28 @@ class VdiFlow(Flow[VdiState]):
             f.write(self.state.final_design)
         registrar_fin("completada")
         print(f"Dossier saved to {RUN_DIR / 'vdi2206_conceptual_design.md'}")
+
+
+# Si una tarea falla (por ejemplo, el modelo responde vacio varias veces seguidas y CrewAI aborta), la corrida
+# se reanuda desde la primera tarea sin informe, con los informes ya escritos como contexto. Cada reanudacion
+# queda en corrida.json (clave "reanudaciones") y en _guardrail.log.
+MAX_REANUDACIONES = 2
+
+
+def _reanudar(inputs: dict, error: Exception):
+    for intento in range(1, MAX_REANUDACIONES + 1):
+        crew, tarea = VdiCrew().crew_reanudado()
+        if crew is None:
+            raise error  # todos los informes existen: el fallo no fue de una tarea, no hay nada que reanudar
+        motivo = f"{type(error).__name__}: {' '.join(str(error).split())[:300]}"
+        print(f"[VDI] La tarea {tarea} fallo ({motivo}). Reanudacion {intento} de {MAX_REANUDACIONES}.", flush=True)
+        registrar_evento("reanudaciones", {"intento": intento, "tarea": tarea, "motivo": motivo})
+        _registrar_guardrail(tarea, "REANUDACION", f"intento {intento}: {motivo}", "")
+        try:
+            return crew.kickoff(inputs=inputs)
+        except Exception as nuevo:
+            error = nuevo
+    raise error
 
 
 def _salida_inmediata(signum, frame):

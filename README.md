@@ -60,6 +60,8 @@ El comando lista los documentos, construye el índice si hace falta y muestra el
 
    Ejemplo: `VDI_REASONING_EFFORT=high VDI_CONTEXT_FILE=casos/banda.txt bash correr.sh`
 
+Si una tarea falla (por ejemplo, el modelo responde vacío varias veces seguidas), la corrida se reanuda hasta 2 veces desde la primera tarea sin informe, con los informes ya escritos como contexto.
+
 En un clúster con Slurm, el script de trabajo debe levantar Ollama dentro del trabajo, exportar `OLLAMA_HOST` y `VDI_RUN_DIR`, y ejecutar `uv run kickoff`.
 
 ## Configuración del flujo
@@ -89,7 +91,7 @@ Cada corrida queda en su propia carpeta dentro de `output/` (ignorada por Git):
 | `05_rams_maintenance.md` | Evaluación RAMS y estrategia PHM |
 | `06_client_acceptance.md` | Matriz de conformidad, solicitudes de cambio (ECR) y dictamen del cliente |
 | `00_vdi2206_consolidated_dossier.md` | Dossier consolidado con decisiones de integración y cierre de ECR |
-| `corrida.json` | Commit, configuración del modelo, entradas, parámetros y tiempos de la corrida |
+| `corrida.json` | Commit, configuración del modelo, entradas, parámetros y tiempos de la corrida; si una tarea falló, las reanudaciones (tarea y motivo) |
 | `_guardrail.log` | Resultado de la verificación de completitud de cada informe |
 | `_llm.log` | Una línea por respuesta del modelo: tokens, tiempo, motivo de fin y herramientas pedidas |
 | `_herramientas.log` | Cada consulta al RAG y cada cálculo, con la tarea que lo pidió y el inicio del resultado |

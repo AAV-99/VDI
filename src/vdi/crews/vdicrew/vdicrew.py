@@ -6,6 +6,7 @@ from pathlib import Path
 
 from crewai import Agent, Crew, Process, Task, LLM
 from crewai.project import CrewBase, agent, crew, task
+from crewai.tasks.task_output import TaskOutput
 
 from ...corrida import RUN_DIR
 from ...registro_llm import RegistroLLM
@@ -264,3 +265,23 @@ class VdiCrew:
             memory=False,
             verbose=True,
         )
+
+    def crew_reanudado(self) -> tuple[Crew | None, str | None]:
+        """Crew con solo las tareas cuyo informe aun no existe en RUN_DIR, para reanudar una corrida que fallo.
+
+        Las tareas ya hechas no se repiten: su informe se lee del archivo y se entrega como contexto a las
+        pendientes, igual que lo haria el proceso secuencial (todas las salidas previas, en orden).
+        Devuelve (None, None) si no queda ninguna tarea pendiente."""
+        completo = self.crew()  # arma agentes y tareas igual que en la corrida normal
+        tareas = completo.tasks
+        pendiente = next((i for i, t in enumerate(tareas) if not Path(t.output_file).exists()), None)
+        if pendiente is None:
+            return None, None
+        for t in tareas[:pendiente]:
+            t.output = TaskOutput(description=t.description, raw=Path(t.output_file).read_text(encoding="utf-8"),
+                                  agent=t.agent.role if t.agent else "")
+        for j in range(pendiente, len(tareas)):
+            tareas[j].context = tareas[:j]
+        nombre = tareas[pendiente].name or Path(tareas[pendiente].output_file).stem
+        crew = Crew(agents=completo.agents, tasks=tareas[pendiente:], process=Process.sequential, memory=False, verbose=True)
+        return crew, nombre

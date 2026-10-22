@@ -81,6 +81,17 @@ def registrar_inicio(llm_config: dict, inputs: dict, parametros: dict) -> None:
     })
 
 
+def registrar_evento(clave: str, valor: dict) -> None:
+    """Agrega un evento a la lista `clave` de corrida.json (por ejemplo, una reanudacion)."""
+    try:
+        datos = json.loads(ARCHIVO.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    valor = {"hora": datetime.now().astimezone().isoformat(timespec="seconds"), **valor}
+    datos.setdefault(clave, []).append(valor)
+    _escribir(datos)
+
+
 def registrar_fin(estado: str) -> None:
     try:
         datos = json.loads(ARCHIVO.read_text(encoding="utf-8"))
