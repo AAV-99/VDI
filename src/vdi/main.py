@@ -106,11 +106,11 @@ class VdiState(BaseModel):
     project_scope: str = ""
     primary_requirements: str = ""
     target_cost: str = ""
-    final_design: str = ""
 
 
 class VdiFlow(Flow[VdiState]):
-    """Flujo de CrewAI de tres pasos: leer el caso, ejecutar la corrida y guardar el dossier."""
+    """Flujo de CrewAI de dos pasos: leer el caso y ejecutar la corrida. Cada tarea escribe su propio informe
+    en RUN_DIR; el dossier final es 00_vdi2206_consolidated_dossier.md."""
 
     @start()
     def leer_caso(self):
@@ -138,12 +138,7 @@ class VdiFlow(Flow[VdiState]):
             "ciclo_correccion": {"max_iteraciones": ciclo.MAX_CICLOS, "max_fallos_por_ecr": ciclo.MAX_FALLOS_ECR},
         }
         registrar_inicio(LLM_CONFIG, inputs, parametros)
-        self.state.final_design = _ejecutar_con_reanudacion(inputs).raw
-
-    @listen(disenar)
-    def guardar_dossier(self):
-        RUN_DIR.mkdir(parents=True, exist_ok=True)
-        (RUN_DIR / "vdi2206_conceptual_design.md").write_text(self.state.final_design, encoding="utf-8")
+        _ejecutar_con_reanudacion(inputs)
         registrar_fin("completada")
         print(f"[VDI] Corrida completada: {RUN_DIR}", flush=True)
 

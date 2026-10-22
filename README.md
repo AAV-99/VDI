@@ -5,7 +5,7 @@ Flujo de **CrewAI** que desarrolla el diseño conceptual de un sistema mecatrón
 ## Arquitectura
 
 ```
-contexto.txt ──► main.py (Flow de CrewAI: leer_caso → disenar → guardar_dossier)
+contexto.txt ──► main.py (Flow de CrewAI: leer_caso → disenar)
                     │
                     ▼
                  ciclo.py
