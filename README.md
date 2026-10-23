@@ -88,7 +88,7 @@ El comando lista los documentos, construye el índice si hace falta y muestra el
    | `VDI_REASONING_EFFORT` | Esfuerzo de razonamiento del modelo: `low`, `medium`, `high` o `xhigh` | El del modelo |
    | `VDI_CONTEXT_FILE` | Otro archivo de contexto (otro caso de estudio) | `src/vdi/contexto.txt` |
    | `VDI_RUN_DIR` | Carpeta de salida de la corrida | `output/<fecha_hora>` |
-   | `VDI_CICLOS` | Máximo de iteraciones del ciclo de corrección; `0` lo apaga (flujo de las etapas anteriores) | `3` |
+   | `VDI_CICLOS` | Máximo de iteraciones del ciclo de corrección; `0` lo apaga (flujo de las etapas anteriores) | `4` |
    | `VDI_HERRAMIENTAS` | `0` apaga todas las herramientas (configuración de las etapas anteriores) | Activas |
    | `VDI_KNOWLEDGE_DIR` | Otra carpeta de documentos para el RAG | `knowledge/` |
    | `VDI_EMBEDDINGS` | Modelo de embeddings en Ollama para el RAG | `qwen3-embedding:0.6b` |

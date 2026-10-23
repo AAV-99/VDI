@@ -30,7 +30,7 @@ from crewai.tasks.task_output import TaskOutput
 from .corrida import RUN_DIR, registrar_evento
 from .crews.vdicrew.vdicrew import MARCA_FIN, MAX_REINTENTOS_INCOMPLETO, VdiCrew, guardrail_informe_completo
 
-MAX_CICLOS = int(os.environ.get("VDI_CICLOS", "3"))  # 0 = sin ciclo de correccion (flujo de las etapas anteriores)
+MAX_CICLOS = int(os.environ.get("VDI_CICLOS", "4"))  # 0 = sin ciclo de correccion (flujo de las etapas anteriores)
 MAX_FALLOS_ECR = 2  # una ECR corregible que falla esta cantidad de veces seguidas queda escalada
 HISTORIAL = RUN_DIR / "_iteraciones.json"
 PASO_ACTUAL = {"tarea": "-"}  # ultima tarea lanzada, para registrar donde fallo una corrida

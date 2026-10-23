@@ -147,10 +147,15 @@ design_board_integration_task:
     mínima, referencia candidata y precio estimado. Los precios del BOM son estimaciones; la cotización formal es una tarea pendiente del
     diseñador, y el cumplimiento de {target_cost} se declara verificado contra estimaciones.
     CICLO DE CORRECCIÓN: Si el contexto incluye el historial del ciclo de corrección, las disciplinas ya corrigieron sus informes
-    para atender las ECR y el cliente verificó esas correcciones. En ese caso trabaja sobre las versiones más recientes de cada informe,
-    limita tus decisiones de integración a los conflictos entre dominios, los presupuestos de sistema y las ECR escaladas o de nivel
-    sistema, usa en la tabla de cierre el estado de la última verificación del cliente y agrega una columna con la iteración en que se
-    cerró cada ECR.
+    para atender las ECR y el cliente verificó esas correcciones. En ese caso trabaja sobre las versiones más recientes de cada informe y
+    estas reglas prevalecen sobre la REGLA DE INTEGRACIÓN: solo puedes cambiar parámetros para resolver conflictos entre dominios (dos
+    informes con valores distintos para el mismo parámetro), los presupuestos de sistema (BOM, masa, costo, ciclo) y las ECR escaladas o
+    de nivel sistema que indique el historial. No cambies parámetros para cerrar ninguna otra ECR. En la tabla de cierre copia, sin
+    modificarlo, el estado de cada ECR en la última verificación del cliente en que aparece (las cerradas en iteraciones anteriores
+    figuran en el historial); una ECR que el cliente abrió y que el ciclo no alcanzó a corregir queda en No cumple. Agrega una columna
+    con la iteración en que se cerró cada ECR. Si consideras necesario otro cambio, no lo apliques al diseño ni a los totales: regístralo
+    en una tabla de cambios recomendados con las columnas parámetro, valor actual, valor recomendado, motivo y cálculo, como tarea
+    pendiente para el diseñador.
     TRAZABILIDAD DEL CONCEPTO: Resume la cadena necesidades, requerimientos, matriz morfológica, ruta factible, evaluación y concepto
     seleccionado, y actualiza la matriz de diseño axiomático con los parámetros finales.
     REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.
@@ -172,12 +177,19 @@ ecr_triage_task:
     sistema solo si la corrección exige cambiar el concepto seleccionado o la arquitectura del producto: esas ECR no se corrigen en el
     ciclo y quedan para la integración final. Si una ECR toca dos disciplinas, asígnala a la que debe cambiar primero; la otra revisará
     el impacto. Tipos: corregible (un cambio de diseño de la disciplina la resuelve), prueba (requiere medición, ensayo, prototipo o
-    simulación que no se puede hacer en esta fase) o cotizacion (requiere una cotización formal). ECR escaladas, que ya fallaron dos
+    simulación que no se puede hacer en esta fase) o cotizacion (requiere una cotización formal). REGLA DE TIPO: si el criterio del
+    cliente admite un cálculo como alternativa al ensayo, o si la ECR tiene una parte de diseño o de documentación que la disciplina
+    puede hacer ahora, es corregible: la disciplina hace esa parte y el cliente dejará la ECR en Pendiente de prueba si solo falta el
+    ensayo. Si esa parte ya se hizo y la última verificación del cliente indica que solo falta el ensayo o la cotización, es prueba o
+    cotizacion. ECR escaladas, que ya fallaron dos
     veces y no debes marcar como corregibles: [[ESCALADAS]].
     FORMATO OBLIGATORIO: una tabla Markdown con exactamente estas columnas y en este orden: | ECR | Disciplina | Tipo | Justificación |.
-    En ECR escribe solo el identificador (por ejemplo ECR-03); en Disciplina y en Tipo, solo una de las palabras indicadas, sin tildes.
-    En Justificación, en una o dos frases, qué debe cambiar la disciplina y contra qué criterio del cliente. Después de la tabla, una
-    nota breve solo si hace falta.
+    En ECR escribe solo el identificador (por ejemplo ECR-03). En Disciplina escribe exactamente una de estas cinco palabras, sin
+    tildes ni variantes: mecanica, electronica, software, rams, sistema (mantenimiento y confiabilidad se escriben rams). En Tipo
+    escribe exactamente una de estas tres palabras: corregible, prueba, cotizacion. En Justificación, en una o dos frases, qué debe
+    cambiar la disciplina y contra qué criterio del cliente. Ejemplo de la forma de una fila (no de su contenido):
+      | ECR-03 | rams | corregible | Qué debe cambiar la disciplina y contra qué criterio del cliente. |
+    Después de la tabla, una nota breve solo si hace falta.
     CIERRE OBLIGATORIO: termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
     La tabla de triaje con una fila por ECR abierta: identificador, disciplina responsable, tipo y justificación.
@@ -195,8 +207,10 @@ domain_correction_task:
     lo exige, decláralo con el cálculo que lo demuestra. No cambies lo que no esté relacionado con lo asignado.
     ENTREGA: el informe completo y actualizado de tu dominio, con la misma estructura que el anterior, que empiece con la sección
     "## Cambios de la iteración [[ITERACION]]" y en ella una tabla Markdown con las columnas | ECR | Parámetro | Valor anterior |
-    Valor nuevo | Cálculo o justificación | Impacto en otros dominios |. En Impacto en otros dominios escribe ninguno, o los dominios
-    afectados (mecanica, electronica, software, rams) y qué cambia para ellos (masa, potencia, señal, tiempo). Si resuelves una ECR
+    Valor nuevo | Cálculo o justificación | Impacto en otros dominios |. En Impacto en otros dominios escribe solo ninguno si el cambio
+    no afecta a otro dominio; si afecta, nombra cada dominio afectado con exactamente una de estas palabras, sin tildes ni variantes:
+    mecanica, electronica, software, rams, seguida de dos puntos y de qué cambia para él (masa, potencia, señal, tiempo), por ejemplo
+    "electronica: cambia la corriente de la válvula; rams: cambia la masa". No nombres un dominio que no esté afectado. Si resuelves una ECR
     demostrando que el valor original cumple, regístrala con el mismo valor anterior y nuevo. Recalcula los totales afectados.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -212,7 +226,9 @@ client_verification_task:
     modificó, abre una ECR nueva con el siguiente número disponible y un criterio de aceptación verificable.
     FORMATO OBLIGATORIO: una tabla Markdown con todas las ECR que no estaban en estado Cumple antes de esta iteración más las nuevas, con
     exactamente estas columnas: | ECR | Criterio de aceptación | Estado | Evidencia |. El Estado solo puede ser Cumple, No cumple o
-    Pendiente de prueba (requiere medición, ensayo, prototipo, simulación o cotización que no se ha hecho). Para una ECR nueva escribe
+    Pendiente de prueba (requiere medición, ensayo, prototipo, simulación o cotización que no se ha hecho), escrito tal cual y sin
+    calificativos (no escribas Cumple condicional ni Cumple parcialmente: si solo falta un ensayo o una cotización, es Pendiente de
+    prueba; si la evidencia no alcanza el criterio, es No cumple). Para una ECR nueva escribe
     en Evidencia "Nueva" y el motivo. Después de la tabla, un dictamen breve.
     CIERRE OBLIGATORIO: termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >

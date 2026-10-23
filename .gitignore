@@ -11,3 +11,10 @@ output/
 knowledge/
 .rag_db/
 referencias/
+
+# Notas privadas para Claude Code (contexto del proyecto, Apolo, estado)
+CLAUDE.local.md
+CLAUDE.md
+
+# Configuracion local del editor
+.vscode/
