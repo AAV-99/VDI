@@ -12,7 +12,8 @@ contexto.txt ──► main.py (Flow de CrewAI: leer_caso → disenar)
                     ├─ Pasada inicial: 01 requerimientos → 01b síntesis → 02 mecánica → 03 electrónica
                     │                  → 04 software → 05 RAMS → 06 revisión del cliente
                     ├─ Ciclo de corrección (hasta VDI_CICLOS iteraciones):
-                    │     07 triaje del líder → corrección de cada disciplina afectada (0X_..._vN)
+                    │     07 triaje del líder → corrección de cada disciplina afectada (0X_..._vN;
+                    │     el líder corrige sus propios informes 01 y 01b)
                     │     → verificación del cliente (06_..._vN)
                     └─ Integración: 00 dossier consolidado
 ```
@@ -129,13 +130,14 @@ Cada corrida queda en su propia carpeta dentro de `output/` (ignorada por Git):
 | `05_rams_maintenance.md` | Evaluación RAMS y estrategia PHM |
 | `06_client_acceptance.md` | Matriz de conformidad, solicitudes de cambio (ECR) y dictamen del cliente |
 | `07_triaje_itN.md` | Triaje de la iteración N: disciplina y tipo de cada ECR abierta |
-| `02_..._vN.md`, `03_..._vN.md`, … | Versión N de un informe de dominio corregido en el ciclo, con su tabla de cambios al inicio |
+| `01_..._vN.md`, `01b_..._vN.md`, `02_..._vN.md`, … | Versión N de un informe corregido en el ciclo, con su tabla de cambios al inicio (01 y 01b los corrige el líder) |
 | `06_client_acceptance_vN.md` | Verificación del cliente al final de la iteración N−1: estado de cada ECR y ECR nuevas |
-| `_iteraciones.json` | Historial del ciclo: ECR asignadas, disciplinas que corrigieron, ECR cerradas, fallidas, nuevas y escaladas, y tokens por iteración |
+| `_iteraciones.json` | Historial del ciclo: ECR asignadas, disciplinas que corrigieron, ECR cerradas, fallidas, nuevas y escaladas, tokens por iteración y discrepancias que queden entre la tabla de cierre del dossier y el estado del cliente |
 | `00_vdi2206_consolidated_dossier.md` | Dossier consolidado con decisiones de integración y cierre de ECR |
-| `corrida.json` | Commit, configuración del modelo, entradas, parámetros y tiempos de la corrida; si una tarea falló, las reanudaciones (tarea y motivo) |
-| `_guardrail.log` | Resultado de la verificación de completitud de cada informe |
+| `corrida.json` | Commit, configuración del modelo, entradas, parámetros (con las huellas `contexto_metodologico` y `huella_prompts`) y tiempos de la corrida; si una tarea falló, las reanudaciones (tarea y motivo) |
+| `_guardrail.log` | Resultado de la verificación de completitud y de formato de cada informe, con los reintentos |
 | `_llm.log` | Una línea por respuesta del modelo: tokens, tiempo, motivo de fin y herramientas pedidas |
 | `_herramientas.log` | Cada uso de una herramienta, con la tarea que lo pidió, el inicio del resultado y las fuentes devueltas (páginas de los manuales o URL) |
+| `_web.jsonl` | Cada búsqueda web completa: consulta, y URL, título y extracto exacto de cada resultado que recibió el agente, para verificar las citas web |
 | `llm_vacias/` | Petición y respuesta completas de cada respuesta vacía del modelo, para analizarlas |
 | `corrida.log` | Log completo de CrewAI |

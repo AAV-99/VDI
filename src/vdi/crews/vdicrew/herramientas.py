@@ -400,8 +400,8 @@ class Calculadora(BaseTool):
 
 # --- BUSQUEDA WEB ------------------------------------------------------------------------------
 
-def buscar_web(consulta: str) -> tuple[str, list[str]]:
-    """Resultados de Tavily como texto para el agente, y la lista de URL devueltas."""
+def buscar_web(consulta: str) -> tuple[str, list[dict]]:
+    """Resultados de Tavily como texto para el agente, y cada resultado (url, titulo, extracto) tal como lo recibe."""
     cuerpo = json.dumps({"query": consulta, "search_depth": "advanced", "chunks_per_source": FRAGMENTOS_POR_PAGINA,
                          "max_results": RESULTADOS_WEB, "include_answer": False, "include_raw_content": False}).encode()
     req = urllib.request.Request(TAVILY_URL, data=cuerpo, headers={
@@ -409,13 +409,24 @@ def buscar_web(consulta: str) -> tuple[str, list[str]]:
     with urllib.request.urlopen(req, timeout=60) as r:
         resultados = json.loads(r.read()).get("results") or []
     hoy = datetime.now().strftime("%Y-%m-%d")
-    salida, urls = [], []
+    salida, recibidos = [], []
     for i, res in enumerate(resultados, 1):
-        url = res.get("url", "")
-        urls.append(url)
+        url, titulo = res.get("url", ""), res.get("title", "").strip()
         extracto = " ".join(str(res.get("content", "")).split())[:CHARS_POR_RESULTADO_WEB]
-        salida.append(f"[Fuente web {i}: {res.get('title', '').strip()} | {url} | consultada el {hoy}]\n{extracto}")
-    return "\n\n".join(salida) or "La búsqueda no devolvió resultados.", urls
+        recibidos.append({"url": url, "titulo": titulo, "extracto": extracto})
+        salida.append(f"[Fuente web {i}: {titulo} | {url} | consultada el {hoy}]\n{extracto}")
+    return "\n\n".join(salida) or "La búsqueda no devolvió resultados.", recibidos
+
+
+def _registrar_web(consulta: str, recibidos: list[dict], error: str = "") -> None:
+    """Cada busqueda completa en _web.jsonl: lo que leyo el agente, para verificar despues las citas web."""
+    try:
+        linea = json.dumps({"hora": datetime.now().isoformat(timespec="seconds"), "tarea": _tarea_actual["nombre"],
+                            "consulta": consulta, "error": error, "resultados": recibidos}, ensure_ascii=False)
+        with _lock, open(RUN_DIR / "_web.jsonl", "a", encoding="utf-8") as f:
+            f.write(linea + "\n")
+    except OSError:
+        pass  # el registro nunca debe tumbar la corrida
 
 
 class _EntradaWeb(BaseModel):
@@ -436,12 +447,14 @@ class BuscarWeb(BaseTool):
     max_usage_count: int | None = MAX_BUSQUEDAS_WEB
 
     def _run(self, query: str) -> str:
-        urls: list[str] = []
+        recibidos: list[dict] = []
         try:
-            resultado, urls = buscar_web(query)
-        except Exception as error:  # una busqueda fallida no debe tumbar la tarea
-            resultado = f"Error en la búsqueda web: {type(error).__name__}: {error}"
-        _registrar(self.name, query, resultado, ";".join(urls) or "-")
+            resultado, recibidos = buscar_web(query)
+            error = ""
+        except Exception as e:  # una busqueda fallida no debe tumbar la tarea
+            resultado = error = f"Error en la búsqueda web: {type(e).__name__}: {e}"
+        _registrar(self.name, query, resultado, ";".join(r["url"] for r in recibidos) or "-")
+        _registrar_web(query, recibidos, error)
         return resultado
 
 

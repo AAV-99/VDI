@@ -107,6 +107,11 @@ ARCHIVO_BUSQUEDA_WEB = Path(__file__).parent / "config" / "busqueda_web.md"
 if BUSQUEDA_WEB_ACTIVA:
     METODOLOGIA += "\n\n" + ARCHIVO_BUSQUEDA_WEB.read_text(encoding="utf-8").strip()
 METODOLOGIA_ID = hashlib.sha256(METODOLOGIA.encode("utf-8")).hexdigest()[:12]
+# Huella de las tareas y los agentes (tasks.yaml y agents.yaml), que METODOLOGIA_ID no cubre. read_text normaliza
+# los saltos de linea, asi que da lo mismo en Windows (CRLF) que en Apolo (LF).
+PROMPTS_ID = hashlib.sha256("".join(
+    (Path(__file__).parent / "config" / f).read_text(encoding="utf-8") for f in ("agents.yaml", "tasks.yaml")
+).encode("utf-8")).hexdigest()[:12]
 # Iteraciones de razonamiento de un agente en una tarea (max_iter de CrewAI, 25 por defecto). Con herramientas,
 # cada consulta o calculo es una iteracion mas. No confundir con las iteraciones del ciclo de correccion (ciclo.py).
 MAX_ITER_AGENTE = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA + MAX_USOS_MATRIZ if HERRAMIENTAS_ACTIVAS else 0) \

@@ -2,15 +2,19 @@
 
 1. Pasada inicial: 01, 01b, 02, 03, 04, 05 y 06 (revision del cliente), en secuencia.
 2. Ciclo de correccion, hasta MAX_CICLOS veces:
-   a. Triaje (lider de integracion): cada ECR abierta recibe disciplina responsable y tipo.
-   b. Correccion: solo las disciplinas con ECR corregibles, en orden mecanica, electronica, software, RAMS.
-      Cada una entrega una version nueva de su informe con la tabla "Cambios de la iteracion N". Si declara
-      impacto sobre una disciplina posterior que no tenia ECR, esa disciplina revisa el impacto en la misma
-      iteracion; el impacto sobre una anterior lo detecta el cliente en la verificacion.
+   a. Triaje (lider de integracion): cada ECR abierta recibe disciplina responsable y tipo. Recibe la asignacion
+      de la iteracion anterior para no cambiar de disciplina sin motivo.
+   b. Correccion: solo las disciplinas con ECR corregibles, en orden requerimientos (informe 01 del lider),
+      sintesis (01b, del lider), mecanica, electronica, software, RAMS. Cada una entrega una version nueva de su
+      informe con la tabla "Cambios de la iteracion N". Si declara impacto sobre una disciplina posterior que no
+      tenia ECR, esa disciplina revisa el impacto en la misma iteracion; el impacto sobre una anterior lo detecta
+      el cliente en la verificacion. Las ECR de nivel sistema (cambio de concepto o de arquitectura) no se
+      corrigen en el ciclo.
    c. Verificacion del cliente: estado de cada ECR atendida frente a su criterio y ECR nuevas.
    El ciclo termina si no quedan ECR corregibles, si se alcanza MAX_CICLOS o si todas las corregibles
    restantes ya fallaron dos veces (quedan escaladas para el integrador).
-3. Integrador final: consolida las versiones finales, resuelve conflictos de sistema y ECR escaladas.
+3. Integrador final: consolida las versiones finales, resuelve conflictos de sistema y ECR escaladas. Un
+   guardrail exige que su tabla de cierre diga Cumple exactamente en las ECR que el cliente dejo en Cumple.
 
 Cada paso escribe su informe en RUN_DIR y se salta si el informe ya existe: si algo falla, volver a llamar a
 ejecutar() continua desde el primer paso sin informe (asi funciona la reanudacion). El historial queda en
@@ -29,14 +33,18 @@ from crewai.tasks.task_output import TaskOutput
 
 from .corrida import RUN_DIR, registrar_evento
 from .crews.vdicrew.vdicrew import MARCA_FIN, MAX_REINTENTOS_INCOMPLETO, VdiCrew, guardrail_informe_completo
+from .crews.vdicrew.vdicrew import _registrar as _registrar_guardrail
 
 MAX_CICLOS = int(os.environ.get("VDI_CICLOS", "4"))  # 0 = sin ciclo de correccion (flujo de las etapas anteriores)
 MAX_FALLOS_ECR = 2  # una ECR corregible que falla esta cantidad de veces seguidas queda escalada
 HISTORIAL = RUN_DIR / "_iteraciones.json"
 PASO_ACTUAL = {"tarea": "-"}  # ultima tarea lanzada, para registrar donde fallo una corrida
 
-# Disciplina -> (agente, informe base, tarea de la pasada inicial)
+# Disciplina -> (agente, informe base, tarea de la pasada inicial). El orden es el de correccion: los informes
+# del lider van primero porque sus cambios (requerimientos, QFD, evaluacion de conceptos) bajan a los dominios.
 DISCIPLINAS = {
+    "requerimientos": ("team_lead", "01_requirements_and_system", "requirements_ingestion_task"),
+    "sintesis": ("team_lead", "01b_system_synthesis", "system_synthesis_task"),
     "mecanica": ("mecanico", "02_mechanical_subsystem", "mechanical_subsystem_design_task"),
     "electronica": ("electronico", "03_electronic_subsystem", "electronic_subsystem_design_task"),
     "software": ("software", "04_software_architecture", "software_subsystem_design_task"),
@@ -47,7 +55,7 @@ INICIALES = ["01_requirements_and_system", "01b_system_synthesis", "02_mechanica
              "04_software_architecture", "05_rams_maintenance", "06_client_acceptance"]
 CLIENTE = "06_client_acceptance"
 DOSSIER = "00_vdi2206_consolidated_dossier"
-ID_ECR = re.compile(r"ECR[\s\-‐–]*0*(\d+)", re.I)
+ID_ECR = re.compile(r"ECR[\s\-‐-―−]*0*(\d+)", re.I)  # el modelo usa guiones tipograficos (U+2011, U+2013...)
 
 
 # --- utilidades de archivos y tablas -------------------------------------------------------------
@@ -139,6 +147,47 @@ def leer_verificacion(texto: str) -> dict[str, str]:
     return estados
 
 
+def leer_cierre(texto: str) -> dict[str, str]:
+    """Estados de la tabla de cierre del dossier: entre las tablas con columnas ECR y Estado, la de mas ECR."""
+    mejor = {}
+    for t in tablas(texto):
+        if not (t and any("ecr" in k for k in t[0]) and any("estado" in k for k in t[0])):
+            continue
+        estados = {}
+        for f in t:
+            ecr = ecr_id(_valor(f, "ecr"))
+            est = _sin_tildes(_valor(f, "estado"))
+            if ecr and ecr not in estados:
+                estados[ecr] = "no_cumple" if "no cumple" in est else "cumple" if "cumple" in est else "pendiente"
+        if len(estados) > len(mejor):
+            mejor = estados
+    return mejor
+
+
+def estados_cliente() -> dict[str, str]:
+    """Estado de cada ECR en la ultima verificacion del cliente en que aparece (versiones 2 en adelante)."""
+    estados = {}
+    for v in range(2, ultima_version(CLIENTE)[0] + 1):
+        estados.update(leer_verificacion(_leer(_archivo(CLIENTE, v))))
+    return estados
+
+
+def discrepancias_cierre(dossier: str, cliente: dict[str, str]) -> list[str]:
+    """ECR en que la tabla de cierre del dossier no respeta el Cumple del cliente (ni de mas ni de menos)."""
+    cierre = leer_cierre(dossier)
+    if not cierre:
+        return ["no hay una tabla de cierre con las columnas ECR y Estado"]
+    problemas = []
+    for ecr, est in sorted(cliente.items()):
+        if ecr not in cierre:
+            problemas.append(f"falta la {ecr} en la tabla de cierre")
+        elif est == "cumple" and cierre[ecr] != "cumple":
+            problemas.append(f"{ecr}: el cliente la dejó en Cumple y el dossier no")
+        elif est != "cumple" and cierre[ecr] == "cumple":
+            problemas.append(f"{ecr}: el dossier dice Cumple pero el cliente no la dejó en Cumple")
+    return problemas
+
+
 def seccion_cambios(texto: str, iteracion: int) -> str:
     m = re.search(rf"^##\s*Cambios de la iteraci[oó]n\s*{iteracion}\b.*?(?=^##\s|\Z)", texto, re.S | re.M | re.I)
     return m.group(0).replace(MARCA_FIN, "").strip() if m else ""
@@ -164,7 +213,11 @@ def _guardrail(tarea: str, validar_formato):
     fallos = {"n": 0}
 
     def validar(output):
-        problema = validar_formato((getattr(output, "raw", None) or ""))
+        texto = getattr(output, "raw", None) or ""
+        problema = validar_formato(texto)
+        if problema:  # queda en _guardrail.log, se repita o no
+            _registrar_guardrail(tarea, "FORMATO" if fallos["n"] < MAX_REINTENTOS_INCOMPLETO else "ACEPTADO_SIN_FORMATO",
+                                 problema, texto)
         if problema and fallos["n"] < MAX_REINTENTOS_INCOMPLETO:
             fallos["n"] += 1
             return (False, f"El informe no cumple el formato obligatorio: {problema}. Entrégalo de nuevo completo, "
@@ -269,8 +322,11 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
     if not ruta_triaje.exists():
         ctx = _contexto_actual(vc, ["01b_system_synthesis"]) + [_previa(ruta_cliente.stem, _leer(ruta_cliente), lider)]
         escaladas = ", ".join(h["escaladas"]) or "ninguna"
+        previa = next((it for it in h["iteraciones"] if it["iteracion"] == k - 1), {})
+        anterior = "; ".join(f"{f['ecr']}: {f['disciplina']} ({f['tipo']})" for f in previa.get("triaje", [])) \
+            or "ninguna (primera iteración)"
         _ejecutar(vc, [_tarea(vc, "ecr_triage_task", lider, ruta_triaje, ctx,
-                              {"ITERACION": k, "ESCALADAS": escaladas},
+                              {"ITERACION": k, "ESCALADAS": escaladas, "TRIAJE_ANTERIOR": anterior},
                               lambda t: None if leer_triaje(t) else "falta la tabla | ECR | Disciplina | Tipo | Justificación |")],
                   inputs)
     triaje = leer_triaje(_leer(ruta_triaje))
@@ -297,8 +353,10 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
             if motivos:
                 texto_ecr += "\n- Revisión de impacto: otra disciplina hizo cambios que afectan tu dominio: " + " ".join(motivos)
             agente = getattr(vc, agente_nombre)()
-            ctx = _contexto_actual(vc, ["01b_system_synthesis"]) + [
-                _previa(ruta_anterior.stem, _leer(ruta_anterior), agente), _previa(ruta_cliente.stem, _leer(ruta_cliente), agente)]
+            # la sintesis es el contexto comun; si es el informe que se corrige, entra una sola vez
+            comun = _contexto_actual(vc, ["01b_system_synthesis"]) if base != "01b_system_synthesis" else []
+            ctx = comun + [_previa(ruta_anterior.stem, _leer(ruta_anterior), agente),
+                           _previa(ruta_cliente.stem, _leer(ruta_cliente), agente)]
             _ejecutar(vc, [_tarea(vc, "domain_correction_task", agente, ruta_nueva, ctx,
                                   {"ITERACION": k, "DOMINIO": d, "ECR_ASIGNADAS": texto_ecr,
                                    "CAMBIOS_PREVIOS": "\n\n".join(cambios_previos) or "Ninguno."},
@@ -362,7 +420,8 @@ def _resumen_historial(h: dict) -> str:
                       f"{', '.join(it.get('fallidas', [])) or '-'} | {', '.join(it.get('nuevas', [])) or '-'} |")
     sistema = sorted({e for it in h["iteraciones"] for e in it.get("escaladas_sistema", [])})
     lineas += ["", f"ECR escaladas por fallar {MAX_FALLOS_ECR} veces: {', '.join(h['escaladas']) or 'ninguna'}.",
-               f"ECR de nivel sistema (concepto o arquitectura), no enviadas a las disciplinas: {', '.join(sistema) or 'ninguna'}.",
+               f"ECR de nivel sistema (concepto o arquitectura), no enviadas a las disciplinas: {', '.join(sistema) or 'ninguna'}. "
+               "Si resuelves alguna con una decisión tuya, queda en Pendiente de prueba: el cliente no la verificó.",
                f"Motivo de fin del ciclo: {h.get('fin') or 'sin ciclo'}."]
     return "\n".join(lineas)
 
@@ -370,17 +429,27 @@ def _resumen_historial(h: dict) -> str:
 def integrador(vc: VdiCrew, inputs: dict, h: dict):
     ruta = _archivo(DOSSIER)
     lider = vc.team_lead()
+    hubo_ciclo = any(it.get("resultado") == "completada" for it in h["iteraciones"])
+    cliente = estados_cliente() if hubo_ciclo else {}
     if not ruta.exists():
-        hubo_ciclo = any(it.get("resultado") == "completada" for it in h["iteraciones"])
         bases = INICIALES if not hubo_ciclo else INICIALES[:-1]
         ctx = _contexto_actual(vc, bases)
+        tarea = vc.design_board_integration_task()
         if hubo_ciclo:  # el informe original del cliente (matriz de conformidad) y su ultima verificacion
             ctx += [_previa(CLIENTE, _leer(_archivo(CLIENTE)), lider),
                     _previa(ultima_version(CLIENTE)[1].stem, _leer(ultima_version(CLIENTE)[1]), lider),
                     _previa("historial", _resumen_historial(h), lider)]
-        tarea = vc.design_board_integration_task()
+            # mismo encargo, con un guardrail que exige respetar el Cumple del cliente en la tabla de cierre
+            validar = lambda t: "; ".join(discrepancias_cierre(t, cliente)) or None  # noqa: E731
+            tarea = Task(description=tarea.description, expected_output=tarea.expected_output, agent=tarea.agent,
+                         output_file=tarea.output_file, name="design_board_integration_task",
+                         guardrail=_guardrail("design_board_integration_task", validar),
+                         guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
         tarea.context = ctx
         _ejecutar(vc, [tarea], inputs)
+    if hubo_ciclo:  # lo que quede sin respetar tras los reintentos, para el analisis
+        h["discrepancias_cierre"] = discrepancias_cierre(_leer(ruta), cliente)
+        _guardar_historial(h)
     return TaskOutput(description="dossier", raw=_leer(ruta), agent=lider.role)
 
 

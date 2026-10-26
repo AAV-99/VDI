@@ -15,7 +15,7 @@ from . import ciclo
 from .corrida import RUN_DIR, registrar_evento, registrar_fin, registrar_inicio
 from .crews.vdicrew import herramientas
 from .crews.vdicrew.vdicrew import (AGENTES_CON_WEB, BUSQUEDA_WEB_ACTIVA, HERRAMIENTAS_ACTIVAS, LLM_CONFIG,
-                                   MAX_ITER_AGENTE, MAX_PALABRAS, MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID)
+                                   MAX_ITER_AGENTE, MAX_PALABRAS, MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID, PROMPTS_ID)
 from .crews.vdicrew.vdicrew import _registrar as _registrar_guardrail
 
 # Caso de estudio (tipo de sistema, alcance, requerimientos y costo) en un archivo de texto, independiente del
@@ -132,6 +132,7 @@ class VdiFlow(Flow[VdiState]):
             "max_palabras_por_informe": MAX_PALABRAS,
             "max_reintentos_guardrail": MAX_REINTENTOS_INCOMPLETO,
             "contexto_metodologico": METODOLOGIA_ID,
+            "huella_prompts": PROMPTS_ID,
             "archivo_contexto": CONTEXTO_FILE.name,
             "herramientas": _comprobar_herramientas(),
             "max_reanudaciones": MAX_REANUDACIONES,

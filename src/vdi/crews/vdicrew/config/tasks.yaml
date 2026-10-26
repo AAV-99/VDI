@@ -152,8 +152,10 @@ design_board_integration_task:
     informes con valores distintos para el mismo parámetro), los presupuestos de sistema (BOM, masa, costo, ciclo) y las ECR escaladas o
     de nivel sistema que indique el historial. No cambies parámetros para cerrar ninguna otra ECR. En la tabla de cierre copia, sin
     modificarlo, el estado de cada ECR en la última verificación del cliente en que aparece (las cerradas en iteraciones anteriores
-    figuran en el historial); una ECR que el cliente abrió y que el ciclo no alcanzó a corregir queda en No cumple. Agrega una columna
-    con la iteración en que se cerró cada ECR. Si consideras necesario otro cambio, no lo apliques al diseño ni a los totales: regístralo
+    figuran en el historial), con dos excepciones: una ECR que el cliente abrió y que el ciclo no alcanzó a corregir queda en No
+    cumple, y una ECR escalada o de nivel sistema que resuelvas con una decisión tuya queda en Pendiente de prueba, con la evidencia
+    "Resuelta por integración (D-xx), sin verificación del cliente". Nunca declares Cumple una ECR que el cliente no dejó en Cumple,
+    ni cambies el estado de una que el cliente dejó en Cumple. Agrega una columna con la iteración en que se cerró cada ECR. Si consideras necesario otro cambio, no lo apliques al diseño ni a los totales: regístralo
     en una tabla de cambios recomendados con las columnas parámetro, valor actual, valor recomendado, motivo y cálculo, como tarea
     pendiente para el diseñador.
     TRAZABILIDAD DEL CONCEPTO: Resume la cadena necesidades, requerimientos, matriz morfológica, ruta factible, evaluación y concepto
@@ -173,10 +175,14 @@ ecr_triage_task:
   description: >
     Triaje de las solicitudes de cambio (ECR) del cliente para {system_type}, iteración [[ITERACION]] del ciclo de corrección. Lee el
     informe más reciente del cliente y la arquitectura de la síntesis del sistema. Para cada ECR que no esté en estado Cumple, decide qué
-    disciplina debe corregirla y si se puede corregir con diseño. Disciplinas: mecanica, electronica, software, rams o sistema. Usa
-    sistema solo si la corrección exige cambiar el concepto seleccionado o la arquitectura del producto: esas ECR no se corrigen en el
-    ciclo y quedan para la integración final. Si una ECR toca dos disciplinas, asígnala a la que debe cambiar primero; la otra revisará
-    el impacto. Tipos: corregible (un cambio de diseño de la disciplina la resuelve), prueba (requiere medición, ensayo, prototipo o
+    disciplina debe corregirla y si se puede corregir con diseño. Disciplinas: requerimientos (tu informe de la Fase 1: necesidades,
+    requerimientos, especificaciones y QFD etapa 1), sintesis (tu informe de síntesis: matriz morfológica, conceptos, evaluación de
+    conceptos y QFD etapa 2), mecanica, electronica, software, rams o sistema. Los errores en tus propios informes los corriges tú
+    como requerimientos o sintesis. Usa sistema solo si la corrección exige cambiar el concepto seleccionado o la arquitectura del
+    producto: esas ECR no se corrigen en el ciclo y quedan para la integración final. Si una ECR toca dos disciplinas, asígnala a la
+    que debe cambiar primero; la otra revisará el impacto. Asignación de la iteración anterior: [[TRIAJE_ANTERIOR]]. Mantén la misma
+    disciplina para cada ECR salvo que la última verificación del cliente muestre que el cambio corresponde a otra; si la cambias,
+    explica por qué en la justificación. Tipos: corregible (un cambio de diseño de la disciplina la resuelve), prueba (requiere medición, ensayo, prototipo o
     simulación que no se puede hacer en esta fase) o cotizacion (requiere una cotización formal). REGLA DE TIPO: si el criterio del
     cliente admite un cálculo como alternativa al ensayo, o si la ECR tiene una parte de diseño o de documentación que la disciplina
     puede hacer ahora, es corregible: la disciplina hace esa parte y el cliente dejará la ECR en Pendiente de prueba si solo falta el
@@ -184,8 +190,9 @@ ecr_triage_task:
     cotizacion. ECR escaladas, que ya fallaron dos
     veces y no debes marcar como corregibles: [[ESCALADAS]].
     FORMATO OBLIGATORIO: una tabla Markdown con exactamente estas columnas y en este orden: | ECR | Disciplina | Tipo | Justificación |.
-    En ECR escribe solo el identificador (por ejemplo ECR-03). En Disciplina escribe exactamente una de estas cinco palabras, sin
-    tildes ni variantes: mecanica, electronica, software, rams, sistema (mantenimiento y confiabilidad se escriben rams). En Tipo
+    En ECR escribe solo el identificador (por ejemplo ECR-03). En Disciplina escribe exactamente una de estas siete palabras, sin
+    tildes ni variantes: requerimientos, sintesis, mecanica, electronica, software, rams, sistema (mantenimiento y confiabilidad se
+    escriben rams). En Tipo
     escribe exactamente una de estas tres palabras: corregible, prueba, cotizacion. En Justificación, en una o dos frases, qué debe
     cambiar la disciplina y contra qué criterio del cliente. Ejemplo de la forma de una fila (no de su contenido):
       | ECR-03 | rams | corregible | Qué debe cambiar la disciplina y contra qué criterio del cliente. |
@@ -203,14 +210,15 @@ domain_correction_task:
     Cambios que otras disciplinas ya hicieron en esta iteración (tenlos en cuenta en tus interfaces):
     [[CAMBIOS_PREVIOS]]
     REGLA DE CORRECCIÓN: para cada ECR asignada, haz el cambio de diseño necesario con su cálculo, o demuestra con un cálculo que el
-    valor original ya cumple el criterio de aceptación del cliente. No cambies el principio de solución ni la arquitectura; si una ECR
-    lo exige, decláralo con el cálculo que lo demuestra. No cambies lo que no esté relacionado con lo asignado.
+    valor original ya cumple el criterio de aceptación del cliente. No cambies el concepto seleccionado, el principio de solución ni
+    la arquitectura; si una ECR lo exige (por ejemplo, si al corregir la evaluación de conceptos cambia el ganador), decláralo con el
+    cálculo que lo demuestra y conserva el concepto actual. No cambies lo que no esté relacionado con lo asignado.
     ENTREGA: el informe completo y actualizado de tu dominio, con la misma estructura que el anterior, que empiece con la sección
     "## Cambios de la iteración [[ITERACION]]" y en ella una tabla Markdown con las columnas | ECR | Parámetro | Valor anterior |
     Valor nuevo | Cálculo o justificación | Impacto en otros dominios |. En Impacto en otros dominios escribe solo ninguno si el cambio
     no afecta a otro dominio; si afecta, nombra cada dominio afectado con exactamente una de estas palabras, sin tildes ni variantes:
-    mecanica, electronica, software, rams, seguida de dos puntos y de qué cambia para él (masa, potencia, señal, tiempo), por ejemplo
-    "electronica: cambia la corriente de la válvula; rams: cambia la masa". No nombres un dominio que no esté afectado. Si resuelves una ECR
+    requerimientos, sintesis, mecanica, electronica, software, rams, seguida de dos puntos y de qué cambia para él (masa, potencia,
+    señal, tiempo, pesos de la evaluación), por ejemplo "electronica: cambia la corriente de la válvula; rams: cambia la masa". No nombres un dominio que no esté afectado. Si resuelves una ECR
     demostrando que el valor original cumple, regístrala con el mismo valor anterior y nuevo. Recalcula los totales afectados.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
