@@ -12,7 +12,9 @@
       corrigen en el ciclo.
    c. Verificacion del cliente: estado de cada ECR atendida frente a su criterio y ECR nuevas.
    El ciclo termina si no quedan ECR corregibles, si se alcanza MAX_CICLOS o si todas las corregibles
-   restantes ya fallaron dos veces (quedan escaladas para el integrador).
+   restantes ya fallaron dos veces (quedan escaladas para el integrador). Una tarea del ciclo que falla tras
+   MAX_INTENTOS_TAREA intentos no tumba la corrida: una correccion fallida deja sus ECR como fallidas y el ciclo
+   sigue; un triaje o una verificacion fallidos terminan el ciclo con su motivo y se pasa al integrador.
 3. Integrador final: consolida las versiones finales, resuelve conflictos de sistema y ECR escaladas. Un
    guardrail exige que su tabla de cierre diga Cumple exactamente en las ECR que el cliente dejo en Cumple.
 
@@ -37,6 +39,7 @@ from .crews.vdicrew.vdicrew import _registrar as _registrar_guardrail
 
 MAX_CICLOS = int(os.environ.get("VDI_CICLOS", "4"))  # 0 = sin ciclo de correccion (flujo de las etapas anteriores)
 MAX_FALLOS_ECR = 2  # una ECR corregible que falla esta cantidad de veces seguidas queda escalada
+MAX_INTENTOS_TAREA = 2  # intentos de una tarea del ciclo antes de darla por fallida y seguir sin ella
 HISTORIAL = RUN_DIR / "_iteraciones.json"
 PASO_ACTUAL = {"tarea": "-"}  # ultima tarea lanzada, para registrar donde fallo una corrida
 
@@ -254,6 +257,21 @@ def _ejecutar(vc: VdiCrew, tareas: list[Task], inputs: dict) -> None:
     Crew(agents=agentes, tasks=tareas, process=Process.sequential, memory=False, verbose=True).kickoff(inputs=inputs)
 
 
+def _intentar(crear_tarea, vc: VdiCrew, inputs: dict) -> str | None:
+    """Ejecuta una tarea del ciclo hasta MAX_INTENTOS_TAREA veces (cada intento con una tarea nueva). Devuelve None
+    si salio bien o el motivo del ultimo fallo: el ciclo sigue sin esa tarea en vez de tumbar la corrida, porque
+    repetirla igual en una reanudacion falla igual (job 23662: correccion de una ECR que era un problema de concepto)."""
+    motivo = None
+    for intento in range(1, MAX_INTENTOS_TAREA + 1):
+        try:
+            _ejecutar(vc, [crear_tarea()], inputs)
+            return None
+        except Exception as error:  # el fallo queda en el historial y en _guardrail.log
+            motivo = f"{type(error).__name__}: {' '.join(str(error).split())[:300]}"
+            _registrar_guardrail(PASO_ACTUAL["tarea"], "TAREA_FALLIDA", f"intento {intento}: {motivo}", "")
+    return motivo
+
+
 # --- historial ------------------------------------------------------------------------------------
 
 def _cargar_historial() -> dict:
@@ -325,10 +343,16 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         previa = next((it for it in h["iteraciones"] if it["iteracion"] == k - 1), {})
         anterior = "; ".join(f"{f['ecr']}: {f['disciplina']} ({f['tipo']})" for f in previa.get("triaje", [])) \
             or "ninguna (primera iteración)"
-        _ejecutar(vc, [_tarea(vc, "ecr_triage_task", lider, ruta_triaje, ctx,
-                              {"ITERACION": k, "ESCALADAS": escaladas, "TRIAJE_ANTERIOR": anterior},
-                              lambda t: None if leer_triaje(t) else "falta la tabla | ECR | Disciplina | Tipo | Justificación |")],
-                  inputs)
+        fallo = _intentar(lambda: _tarea(vc, "ecr_triage_task", lider, ruta_triaje, ctx,
+                                         {"ITERACION": k, "ESCALADAS": escaladas, "TRIAJE_ANTERIOR": anterior},
+                                         lambda t: None if leer_triaje(t) else "falta la tabla | ECR | Disciplina | Tipo | Justificación |"),
+                          vc, inputs)
+        if fallo:
+            registro["resultado"] = "triaje fallido"
+            registro["fallo"] = fallo
+            h["fin"] = f"triaje fallido en la iteración {k}"
+            _guardar_historial(h)
+            return False
     triaje = leer_triaje(_leer(ruta_triaje))
     registro["triaje"] = triaje
     asignadas = {d: [f for f in triaje if f["disciplina"] == d and f["tipo"] == "corregible" and f["ecr"] not in h["escaladas"]]
@@ -339,8 +363,11 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         _guardar_historial(h)
         return False
 
-    # b. Correcciones, en orden; los impactos declarados sobre disciplinas posteriores se revisan en esta iteracion
+    # b. Correcciones, en orden; los impactos declarados sobre disciplinas posteriores se revisan en esta iteracion.
+    # Una correccion que falla tras sus intentos no tumba la corrida: su informe queda en la version anterior y sus
+    # ECR cuentan como fallidas (a la segunda falla quedan escaladas para el integrador).
     cambios_previos, impactadas, ejecutadas = [], {}, []
+    fallidas_correccion = registro.setdefault("correcciones_fallidas", {})
     for d in ORDEN:
         ecrs, motivos = asignadas[d], impactadas.get(d, [])
         if not ecrs and not motivos:
@@ -348,7 +375,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         agente_nombre, base, _ = DISCIPLINAS[d]
         v, ruta_anterior = ultima_version(base)
         ruta_nueva = _archivo(base, k + 1)
-        if not ruta_nueva.exists():
+        if not ruta_nueva.exists() and d not in fallidas_correccion:
             texto_ecr = "\n".join(f"- {f['ecr']}: {f['justificacion']}" for f in ecrs) or "- Ninguna ECR directa."
             if motivos:
                 texto_ecr += "\n- Revisión de impacto: otra disciplina hizo cambios que afectan tu dominio: " + " ".join(motivos)
@@ -357,12 +384,17 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
             comun = _contexto_actual(vc, ["01b_system_synthesis"]) if base != "01b_system_synthesis" else []
             ctx = comun + [_previa(ruta_anterior.stem, _leer(ruta_anterior), agente),
                            _previa(ruta_cliente.stem, _leer(ruta_cliente), agente)]
-            _ejecutar(vc, [_tarea(vc, "domain_correction_task", agente, ruta_nueva, ctx,
-                                  {"ITERACION": k, "DOMINIO": d, "ECR_ASIGNADAS": texto_ecr,
-                                   "CAMBIOS_PREVIOS": "\n\n".join(cambios_previos) or "Ninguno."},
-                                  lambda t: None if seccion_cambios(t, k) and _tabla_con(seccion_cambios(t, k), "ecr", "impacto")
-                                  else f"falta la sección '## Cambios de la iteración {k}' con su tabla de cambios")],
-                      inputs)
+            reemplazos = {"ITERACION": k, "DOMINIO": d, "ECR_ASIGNADAS": texto_ecr,
+                          "CAMBIOS_PREVIOS": "\n\n".join(cambios_previos) or "Ninguno."}
+            fallo = _intentar(lambda: _tarea(vc, "domain_correction_task", agente, ruta_nueva, ctx, reemplazos,
+                                             lambda t: None if seccion_cambios(t, k) and _tabla_con(seccion_cambios(t, k), "ecr", "impacto")
+                                             else f"falta la sección '## Cambios de la iteración {k}' con su tabla de cambios"),
+                              vc, inputs)
+            if fallo:
+                fallidas_correccion[d] = {"ecr": [f["ecr"] for f in ecrs], "motivo": fallo}
+                _guardar_historial(h)
+        if d in fallidas_correccion:
+            continue
         cambios = seccion_cambios(_leer(ruta_nueva), k)
         cambios_previos.append(f"Disciplina {d}:\n{cambios}")
         ejecutadas.append({"disciplina": d, "ecr": [f["ecr"] for f in ecrs], "revision_impacto": bool(motivos),
@@ -374,21 +406,28 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
                 registro.setdefault("impactos_hacia_atras", []).append({"desde": d, "hacia": otra})
     registro["ejecutadas"] = ejecutadas
 
-    # c. Verificacion del cliente
+    # c. Verificacion del cliente, solo de lo que se corrigio; sin correcciones no hay nada que verificar
     ruta_verif = _archivo(CLIENTE, v_cliente + 1)
-    atendidas = [f["ecr"] for e in asignadas.values() for f in e]
-    if not ruta_verif.exists():
+    no_corregidas = [e for f in fallidas_correccion.values() for e in f["ecr"]]
+    atendidas = [f["ecr"] for e in asignadas.values() for f in e if f["ecr"] not in no_corregidas]
+    if ejecutadas and not ruta_verif.exists():
         cliente = vc.cliente()
         ctx = [_previa(ruta_cliente.stem, _leer(ruta_cliente), cliente)] + [
             _previa(e["informe"], _leer(RUN_DIR / e["informe"]), cliente) for e in ejecutadas]
-        _ejecutar(vc, [_tarea(vc, "client_verification_task", cliente, ruta_verif, ctx,
-                              {"ITERACION": k, "ECR_ITERACION": ", ".join(atendidas)},
-                              lambda t: None if leer_verificacion(t) else "falta la tabla | ECR | Criterio de aceptación | Estado | Evidencia |")],
-                  inputs)
-    estados = leer_verificacion(_leer(ruta_verif))
+        fallo = _intentar(lambda: _tarea(vc, "client_verification_task", cliente, ruta_verif, ctx,
+                                         {"ITERACION": k, "ECR_ITERACION": ", ".join(atendidas)},
+                                         lambda t: None if leer_verificacion(t) else "falta la tabla | ECR | Criterio de aceptación | Estado | Evidencia |"),
+                          vc, inputs)
+        if fallo:  # las correcciones quedan sin verificar: el integrador solo ve el estado anterior del cliente
+            registro["resultado"] = "verificación fallida"
+            registro["fallo"] = fallo
+            h["fin"] = f"verificación fallida en la iteración {k}"
+            _guardar_historial(h)
+            return False
+    estados = leer_verificacion(_leer(ruta_verif)) if ruta_verif.exists() else {}
     registro["verificacion"] = estados
     registro["cerradas"] = [e for e in atendidas if estados.get(e) in ("cumple", "pendiente")]
-    registro["fallidas"] = [e for e in atendidas if estados.get(e) == "no_cumple"]
+    registro["fallidas"] = [e for e in atendidas if estados.get(e) == "no_cumple"] + no_corregidas
     anteriores = {f["ecr"] for it in h["iteraciones"] if it["iteracion"] < k for f in it.get("triaje", [])}
     registro["nuevas"] = sorted(set(estados) - anteriores - {f["ecr"] for f in triaje})
 
@@ -419,6 +458,11 @@ def _resumen_historial(h: dict) -> str:
                       f"{', '.join(x for e in it.get('ejecutadas', []) for x in e['ecr'])} | {', '.join(it.get('cerradas', [])) or '-'} | "
                       f"{', '.join(it.get('fallidas', [])) or '-'} | {', '.join(it.get('nuevas', [])) or '-'} |")
     sistema = sorted({e for it in h["iteraciones"] for e in it.get("escaladas_sistema", [])})
+    sin_corregir = [f"{d} en la iteración {it['iteracion']} ({', '.join(f['ecr'])})"
+                    for it in h["iteraciones"] for d, f in it.get("correcciones_fallidas", {}).items()]
+    if sin_corregir:
+        lineas += ["", "Correcciones que fallaron (la disciplina no pudo entregar su informe; sus ECR cuentan como fallidas "
+                       "y pueden indicar un problema de concepto): " + "; ".join(sin_corregir) + "."]
     lineas += ["", f"ECR escaladas por fallar {MAX_FALLOS_ECR} veces: {', '.join(h['escaladas']) or 'ninguna'}.",
                f"ECR de nivel sistema (concepto o arquitectura), no enviadas a las disciplinas: {', '.join(sistema) or 'ninguna'}. "
                "Si resuelves alguna con una decisión tuya, queda en Pendiente de prueba: el cliente no la verificó.",
@@ -462,7 +506,7 @@ def ejecutar(inputs: dict):
         k = 1
         while k <= MAX_CICLOS:
             if not iteracion(VdiCrew(), inputs, k, h):
-                h["fin"] = "sin ECR corregibles"
+                h["fin"] = h.get("fin") or "sin ECR corregibles"  # triaje o verificacion fallidos fijan su motivo
                 break
             k += 1
         else:

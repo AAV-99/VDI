@@ -19,7 +19,7 @@ contexto.txt ──► main.py (Flow de CrewAI: leer_caso → disenar)
 ```
 
 - `main.py` lee el caso, comprueba las herramientas, registra la configuración en `corrida.json` y reanuda la corrida si una tarea falla.
-- `ciclo.py` decide qué tarea se ejecuta y con qué informes previos como contexto. Cada paso escribe su informe y se salta si el informe ya existe, por eso la reanudación continúa desde el primer paso sin informe.
+- `ciclo.py` decide qué tarea se ejecuta y con qué informes previos como contexto. Cada paso escribe su informe y se salta si el informe ya existe, por eso la reanudación continúa desde el primer paso sin informe. Una tarea del ciclo (triaje, corrección o verificación) que falla dos veces no tumba la corrida: una corrección fallida deja sus ECR como fallidas (a la segunda falla quedan escaladas) y el ciclo sigue; un triaje o una verificación fallidos cierran el ciclo y se pasa al integrador.
 - `vdicrew.py` define los agentes, las tareas, el modelo y el guardrail que exige informes completos.
 - `herramientas.py` implementa las herramientas de los agentes; `registro_llm.py` y `corrida.py` dejan la trazabilidad de cada corrida.
 
