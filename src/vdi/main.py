@@ -15,7 +15,8 @@ from . import ciclo
 from .corrida import RUN_DIR, registrar_evento, registrar_fin, registrar_inicio
 from .crews.vdicrew import herramientas
 from .crews.vdicrew.vdicrew import (AGENTES_CON_WEB, BUSQUEDA_WEB_ACTIVA, HERRAMIENTAS_ACTIVAS, LLM_CONFIG,
-                                   MAX_ITER_AGENTE, MAX_PALABRAS, MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID, PROMPTS_ID)
+                                   MAX_ITER_AGENTE, MAX_PALABRAS, MAX_REINTENTOS_INCOMPLETO, METODOLOGIA_ID, MODELO_ACTIVO,
+                                   PROMPTS_ID)
 from .crews.vdicrew.vdicrew import _registrar as _registrar_guardrail
 
 # Caso de estudio (tipo de sistema, alcance, requerimientos y costo) en un archivo de texto, independiente del
@@ -65,7 +66,10 @@ def _comprobar_herramientas() -> dict:
     """Abre (o construye) el indice del RAG y prueba la busqueda web antes de empezar: si algo falla, la
     corrida se detiene aqui en vez de seguir con una herramienta que solo devuelve errores. Devuelve la
     configuracion de las herramientas para corrida.json."""
-    config = {"activas": HERRAMIENTAS_ACTIVAS}
+    config = {"activas": HERRAMIENTAS_ACTIVAS, "modelo_de_diseno": MODELO_ACTIVO, "max_iteraciones_agente": MAX_ITER_AGENTE}
+    if MODELO_ACTIVO:
+        config.update({"max_registros_modelo_por_tarea": herramientas.MAX_REGISTROS_MODELO,
+                       "max_consultas_modelo_por_tarea": herramientas.MAX_CONSULTAS_MODELO})
     if not HERRAMIENTAS_ACTIVAS:
         return config
     herramientas.buscar("allowable payload")
@@ -75,7 +79,6 @@ def _comprobar_herramientas() -> dict:
         "max_usos_calculadora_por_tarea": herramientas.MAX_USOS_CALCULADORA,
         "max_usos_matriz_por_tarea": herramientas.MAX_USOS_MATRIZ,
         "busqueda_web": BUSQUEDA_WEB_ACTIVA,
-        "max_iteraciones_agente": MAX_ITER_AGENTE,
     })
     if BUSQUEDA_WEB_ACTIVA:
         herramientas.buscar_web("vacuum gripper end effector")

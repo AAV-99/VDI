@@ -8,8 +8,10 @@ dependencies = [
     "crewai>=1.15.17,<2.0.0",
     "httpx",          # interceptor que registra cada respuesta del modelo (registro_llm.py)
     "numpy",          # busqueda vectorial del RAG
+    "pint>=0.24.4",   # unidades del modelo de diseno compartido (modelo.py)
     "pymupdf",        # lectura de los manuales en PDF del RAG
     "python-dotenv",  # TAVILY_API_KEY desde el archivo .env
+    "rdflib>=7.6.0",  # exportacion del modelo de diseno a RDF (Turtle)
 ]
 
 [project.scripts]

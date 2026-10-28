@@ -17,8 +17,8 @@ from crewai.project import CrewBase, agent, crew, task
 
 from ...corrida import RUN_DIR
 from ...registro_llm import RegistroLLM
-from .herramientas import (MAX_BUSQUEDAS_WEB, MAX_CONSULTAS_RAG, MAX_USOS_CALCULADORA, MAX_USOS_MATRIZ, clave_tavily,
-                           herramientas_agente)
+from .herramientas import (MAX_BUSQUEDAS_WEB, MAX_CONSULTAS_MODELO, MAX_CONSULTAS_RAG, MAX_REGISTROS_MODELO,
+                           MAX_USOS_CALCULADORA, MAX_USOS_MATRIZ, clave_tavily, herramientas_agente, herramientas_modelo)
 
 # --- GUARDRAIL DE COMPLETITUD ---
 # Cada tarea debe cerrar su informe con MARCA_FIN (se pide en tasks.yaml).
@@ -106,6 +106,27 @@ if HERRAMIENTAS_ACTIVAS and BUSQUEDA_WEB_PEDIDA and not BUSQUEDA_WEB_ACTIVA:
 ARCHIVO_BUSQUEDA_WEB = Path(__file__).parent / "config" / "busqueda_web.md"
 if BUSQUEDA_WEB_ACTIVA:
     METODOLOGIA += "\n\n" + ARCHIVO_BUSQUEDA_WEB.read_text(encoding="utf-8").strip()
+# Modelo de diseno compartido (F1, src/vdi/modelo.py): activo cuando lo estan las herramientas; VDI_MODELO=0 lo
+# apaga y reproduce E2, y VDI_MODELO=1 lo activa aunque VDI_HERRAMIENTAS=0 (pruebas con el servidor simulado, que
+# no sirve embeddings para el RAG). Sus reglas estan en modelo.md; lo que registra cada tarea va en tasks.yaml dentro
+# de una marca [[MODELO: ...]] que con_modelo() conserva (con la vista del modelo) o quita.
+MODELO_ACTIVO = os.environ.get("VDI_MODELO", "1" if HERRAMIENTAS_ACTIVAS else "0").strip() != "0"
+ARCHIVO_MODELO = Path(__file__).parent / "config" / "modelo.md"
+if MODELO_ACTIVO:
+    METODOLOGIA += "\n\n" + ARCHIVO_MODELO.read_text(encoding="utf-8").strip()
+MARCA_MODELO = re.compile(r"\s*\[\[MODELO:(.*?)\]\]", re.S)
+
+
+def con_modelo(descripcion: str, vista: str = "") -> str:
+    """Descripcion de una tarea con su instruccion del modelo y la vista que le toca, o sin ellas si el modelo esta
+    apagado. La vista no puede traer llaves (CrewAI las interpreta)."""
+    if not MODELO_ACTIVO:
+        return MARCA_MODELO.sub("", descripcion)
+    vista = vista.replace("{", "(").replace("}", ")")
+    return MARCA_MODELO.sub(lambda m: "\nMODELO DE DISEÑO: " + " ".join(m.group(1).split()) +
+                            ("\nVISTA DEL MODELO (estado actual):\n" + vista + "\n" if vista else "\n"), descripcion)
+
+
 METODOLOGIA_ID = hashlib.sha256(METODOLOGIA.encode("utf-8")).hexdigest()[:12]
 # Huella de las tareas y los agentes (tasks.yaml y agents.yaml), que METODOLOGIA_ID no cubre. read_text normaliza
 # los saltos de linea, asi que da lo mismo en Windows (CRLF) que en Apolo (LF).
@@ -115,7 +136,7 @@ PROMPTS_ID = hashlib.sha256("".join(
 # Iteraciones de razonamiento de un agente en una tarea (max_iter de CrewAI, 25 por defecto). Con herramientas,
 # cada consulta o calculo es una iteracion mas. No confundir con las iteraciones del ciclo de correccion (ciclo.py).
 MAX_ITER_AGENTE = 25 + (MAX_CONSULTAS_RAG + MAX_USOS_CALCULADORA + MAX_USOS_MATRIZ if HERRAMIENTAS_ACTIVAS else 0) \
-    + (MAX_BUSQUEDAS_WEB if BUSQUEDA_WEB_ACTIVA else 0)
+    + (MAX_BUSQUEDAS_WEB if BUSQUEDA_WEB_ACTIVA else 0) + (MAX_REGISTROS_MODELO + MAX_CONSULTAS_MODELO if MODELO_ACTIVO else 0)
 
 # Configuracion del LLM. Se guarda tal cual en corrida.json.
 LLM_CONFIG = {
@@ -158,7 +179,8 @@ class VdiCrew:
             config=cfg,
             backstory=cfg["backstory"].rstrip() + "\n\n" + METODOLOGIA,
             llm=self.llm,
-            tools=herramientas_agente(web=BUSQUEDA_WEB_ACTIVA and nombre in AGENTES_CON_WEB) if HERRAMIENTAS_ACTIVAS else [],
+            tools=(herramientas_agente(web=BUSQUEDA_WEB_ACTIVA and nombre in AGENTES_CON_WEB) if HERRAMIENTAS_ACTIVAS else [])
+            + (herramientas_modelo(nombre) if MODELO_ACTIVO else []),
             max_iter=MAX_ITER_AGENTE,
             verbose=True,
         )

@@ -21,6 +21,12 @@
 Cada paso escribe su informe en RUN_DIR y se salta si el informe ya existe: si algo falla, volver a llamar a
 ejecutar() continua desde el primer paso sin informe (asi funciona la reanudacion). El historial queda en
 _iteraciones.json.
+
+Modelo de diseno compartido (F1, src/vdi/modelo.py; VDI_MODELO=0 lo apaga): cada tarea corre en su transaccion
+(se confirma si la tarea termina bien, se descarta si falla) y recibe en su descripcion la vista del modelo que le
+toca. El codigo registra en el modelo la disciplina y el tipo del triaje y los estados de la verificacion, sugiere
+al triaje la disciplina duena de lo que afecta cada ECR y calcula el impacto de cada correccion para compararlo con
+el declarado. Al reanudar, el modelo se reconstruye con las operaciones de las tareas cuyo informe existe.
 """
 import csv
 import json
@@ -34,14 +40,18 @@ from crewai import Crew, Process, Task
 from crewai.tasks.task_output import TaskOutput
 
 from .corrida import RUN_DIR, registrar_evento
-from .crews.vdicrew.vdicrew import MARCA_FIN, MAX_REINTENTOS_INCOMPLETO, VdiCrew, guardrail_informe_completo
+from .crews.vdicrew.herramientas import ROL_AGENTE, usar_modelo
+from .crews.vdicrew.vdicrew import (MARCA_FIN, MAX_REINTENTOS_INCOMPLETO, MODELO_ACTIVO, VdiCrew, con_modelo,
+                                    guardrail_informe_completo)
 from .crews.vdicrew.vdicrew import _registrar as _registrar_guardrail
+from .modelo import Modelo
 
 MAX_CICLOS = int(os.environ.get("VDI_CICLOS", "4"))  # 0 = sin ciclo de correccion (flujo de las etapas anteriores)
 MAX_FALLOS_ECR = 2  # una ECR corregible que falla esta cantidad de veces seguidas queda escalada
 MAX_INTENTOS_TAREA = 2  # intentos de una tarea del ciclo antes de darla por fallida y seguir sin ella
 HISTORIAL = RUN_DIR / "_iteraciones.json"
 PASO_ACTUAL = {"tarea": "-"}  # ultima tarea lanzada, para registrar donde fallo una corrida
+MODELO = {"m": None}  # modelo de diseno de la corrida (None si VDI_MODELO=0)
 
 # Disciplina -> (agente, informe base, tarea de la pasada inicial). El orden es el de correccion: los informes
 # del lider van primero porque sus cambios (requerimientos, QFD, evaluacion de conceptos) bajan a los dominios.
@@ -57,6 +67,9 @@ ORDEN = list(DISCIPLINAS)
 INICIALES = ["01_requirements_and_system", "01b_system_synthesis", "02_mechanical_subsystem", "03_electronic_subsystem",
              "04_software_architecture", "05_rams_maintenance", "06_client_acceptance"]
 CLIENTE = "06_client_acceptance"
+# Pasada inicial: (informe, tarea de tasks.yaml, agente), en orden
+PASADA = [(base, clave, agente) for agente, base, clave in DISCIPLINAS.values()] + \
+    [(CLIENTE, "client_acceptance_review_task", "cliente")]
 DOSSIER = "00_vdi2206_consolidated_dossier"
 ID_ECR = re.compile(r"ECR[\s\-‐-―−]*0*(\d+)", re.I)  # el modelo usa guiones tipograficos (U+2011, U+2013...)
 
@@ -239,11 +252,18 @@ def _previa(nombre: str, texto: str, agente) -> Task:
     return t
 
 
-def _tarea(vc: VdiCrew, clave: str, agente, salida: Path, contexto: list, reemplazos: dict, validar=None) -> Task:
+def _vista(rol: str, extra: str = "") -> str:
+    m = MODELO["m"]
+    return m.vista(rol) + extra if m else ""
+
+
+def _tarea(vc: VdiCrew, clave: str, agente, salida: Path, contexto: list, reemplazos: dict, validar=None,
+           vista: str = "") -> Task:
     cfg = vc.tasks_config[clave]
     desc = cfg["description"]
     for marca, valor in reemplazos.items():
         desc = desc.replace(f"[[{marca}]]", _sin_llaves(str(valor)))
+    desc = con_modelo(desc, vista)
     nombre = f"{clave}:{salida.stem}"
     return Task(description=desc, expected_output=cfg["expected_output"], agent=agente, context=contexto,
                 output_file=str(salida), name=clave,
@@ -257,14 +277,32 @@ def _ejecutar(vc: VdiCrew, tareas: list[Task], inputs: dict) -> None:
     Crew(agents=agentes, tasks=tareas, process=Process.sequential, memory=False, verbose=True).kickoff(inputs=inputs)
 
 
-def _intentar(crear_tarea, vc: VdiCrew, inputs: dict) -> str | None:
+def _correr(vc: VdiCrew, tarea: Task, inputs: dict, iteracion: int = 0, despues=None) -> None:
+    """Ejecuta una tarea dentro de su transaccion del modelo: si termina bien, despues(m) registra lo que el codigo
+    extrae de su informe y se confirma; si falla, sus cambios se descartan."""
+    m = MODELO["m"]
+    if m:
+        m.iniciar_tarea(Path(tarea.output_file).stem, iteracion)
+    try:
+        _ejecutar(vc, [tarea], inputs)
+    except Exception:
+        if m:
+            m.descartar()
+        raise
+    if m:
+        if despues:
+            despues(m)
+        m.confirmar()
+
+
+def _intentar(crear_tarea, vc: VdiCrew, inputs: dict, iteracion: int = 0, despues=None) -> str | None:
     """Ejecuta una tarea del ciclo hasta MAX_INTENTOS_TAREA veces (cada intento con una tarea nueva). Devuelve None
     si salio bien o el motivo del ultimo fallo: el ciclo sigue sin esa tarea en vez de tumbar la corrida, porque
     repetirla igual en una reanudacion falla igual (job 23662: correccion de una ECR que era un problema de concepto)."""
     motivo = None
     for intento in range(1, MAX_INTENTOS_TAREA + 1):
         try:
-            _ejecutar(vc, [crear_tarea()], inputs)
+            _correr(vc, crear_tarea(), inputs, iteracion, despues)
             return None
         except Exception as error:  # el fallo queda en el historial y en _guardrail.log
             motivo = f"{type(error).__name__}: {' '.join(str(error).split())[:300]}"
@@ -306,18 +344,32 @@ def _tokens_desde(n: int) -> int:
 
 # --- pasos ----------------------------------------------------------------------------------------
 
-def pasada_inicial(vc: VdiCrew, inputs: dict) -> None:
-    """Tareas 01 a 06 en secuencia; las que ya tienen informe no se repiten y aportan su texto como contexto."""
-    completo = vc.crew()
-    tareas = [t for t in completo.tasks if Path(t.output_file).stem in INICIALES]
-    pendiente = next((i for i, t in enumerate(tareas) if not Path(t.output_file).exists()), None)
-    if pendiente is None:
+def _registrar_codigo(m: Modelo, columnas: list[str], filas: list[list[str]], rol: str, registro: dict) -> None:
+    """El codigo registra campos de ECR en el modelo con el rol indicado; un rechazo queda en el historial."""
+    if not filas:
         return
-    for t in tareas[:pendiente]:
-        t.output = TaskOutput(description=t.description, raw=_leer(Path(t.output_file)), agent=t.agent.role)
-    for j in range(pendiente, len(tareas)):
-        tareas[j].context = tareas[:j]
-    _ejecutar(vc, tareas[pendiente:], inputs)
+    tabla = "\n".join(["| ID | " + " | ".join(columnas) + " |", "|" + "---|" * (len(columnas) + 1)] +
+                      ["| " + " | ".join(f) + " |" for f in filas])
+    resultado = m.registrar("ecr", tabla, rol)
+    if not resultado.startswith("Aplicadas"):
+        registro.setdefault("modelo_rechazos", []).append(" ".join(resultado.split())[:600])
+
+
+def pasada_inicial(vc: VdiCrew, inputs: dict) -> None:
+    """Tareas 01 a 06 en secuencia, una por una: cada una en su transaccion del modelo y con la vista que dejaron
+    las anteriores. Las que ya tienen informe no se repiten y aportan su texto como contexto."""
+    hechas = []
+    for base, clave, nombre in PASADA:
+        ruta = _archivo(base)
+        agente = getattr(vc, nombre)()
+        if not ruta.exists():
+            cfg = vc.tasks_config[clave]
+            tarea = Task(description=con_modelo(cfg["description"], _vista(ROL_AGENTE[nombre])),
+                         expected_output=cfg["expected_output"], agent=agente, context=list(hechas),
+                         output_file=str(ruta), name=clave, guardrail=guardrail_informe_completo(clave),
+                         guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
+            _correr(vc, tarea, inputs)
+        hechas.append(_previa(base, _leer(ruta), agente))
 
 
 def _contexto_actual(vc: VdiCrew, bases: list[str]) -> list[Task]:
@@ -343,10 +395,19 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         previa = next((it for it in h["iteraciones"] if it["iteracion"] == k - 1), {})
         anterior = "; ".join(f"{f['ecr']}: {f['disciplina']} ({f['tipo']})" for f in previa.get("triaje", [])) \
             or "ninguna (primera iteración)"
+        def registrar_triaje(m):  # disciplina y tipo de cada ECR, desde la tabla del lider
+            filas = [f for f in leer_triaje(_leer(ruta_triaje)) if f["tipo"] != "cumple"]
+            registro["ecr_fuera_del_modelo"] = sorted({f["ecr"] for f in filas if f["ecr"] not in m.elementos})
+            _registrar_codigo(m, ["Disciplina", "Tipo"], [[f["ecr"], f["disciplina"], f["tipo"]] for f in filas
+                                                          if f["ecr"] in m.elementos], "lider", registro)
+
+        sugerencias = MODELO["m"].sugerencias_triaje() if MODELO["m"] else ""
         fallo = _intentar(lambda: _tarea(vc, "ecr_triage_task", lider, ruta_triaje, ctx,
                                          {"ITERACION": k, "ESCALADAS": escaladas, "TRIAJE_ANTERIOR": anterior},
-                                         lambda t: None if leer_triaje(t) else "falta la tabla | ECR | Disciplina | Tipo | Justificación |"),
-                          vc, inputs)
+                                         lambda t: None if leer_triaje(t) else "falta la tabla | ECR | Disciplina | Tipo | Justificación |",
+                                         _vista("lider", "\n\nDisciplina sugerida por el modelo (dueña de los elementos que "
+                                                         "afecta cada ECR; decides tú):\n" + sugerencias)),
+                          vc, inputs, k, registrar_triaje)
         if fallo:
             registro["resultado"] = "triaje fallido"
             registro["fallo"] = fallo
@@ -366,7 +427,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
     # b. Correcciones, en orden; los impactos declarados sobre disciplinas posteriores se revisan en esta iteracion.
     # Una correccion que falla tras sus intentos no tumba la corrida: su informe queda en la version anterior y sus
     # ECR cuentan como fallidas (a la segunda falla quedan escaladas para el integrador).
-    cambios_previos, impactadas, ejecutadas = [], {}, []
+    cambios_previos, impactadas, ejecutadas, calculados = [], {}, [], {}
     fallidas_correccion = registro.setdefault("correcciones_fallidas", {})
     for d in ORDEN:
         ecrs, motivos = asignadas[d], impactadas.get(d, [])
@@ -386,10 +447,12 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
                            _previa(ruta_cliente.stem, _leer(ruta_cliente), agente)]
             reemplazos = {"ITERACION": k, "DOMINIO": d, "ECR_ASIGNADAS": texto_ecr,
                           "CAMBIOS_PREVIOS": "\n\n".join(cambios_previos) or "Ninguno."}
+            rol = "lider" if d in ("requerimientos", "sintesis") else d
             fallo = _intentar(lambda: _tarea(vc, "domain_correction_task", agente, ruta_nueva, ctx, reemplazos,
                                              lambda t: None if seccion_cambios(t, k) and _tabla_con(seccion_cambios(t, k), "ecr", "impacto")
-                                             else f"falta la sección '## Cambios de la iteración {k}' con su tabla de cambios"),
-                              vc, inputs)
+                                             else f"falta la sección '## Cambios de la iteración {k}' con su tabla de cambios",
+                                             _vista(rol)),
+                              vc, inputs, k, lambda m: calculados.__setitem__(d, m.impacto_pendiente(d)))
             if fallo:
                 fallidas_correccion[d] = {"ecr": [f["ecr"] for f in ecrs], "motivo": fallo}
                 _guardar_historial(h)
@@ -398,7 +461,8 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         cambios = seccion_cambios(_leer(ruta_nueva), k)
         cambios_previos.append(f"Disciplina {d}:\n{cambios}")
         ejecutadas.append({"disciplina": d, "ecr": [f["ecr"] for f in ecrs], "revision_impacto": bool(motivos),
-                           "informe": ruta_nueva.name})
+                           "informe": ruta_nueva.name, "impacto_declarado": sorted(impactos(cambios) - {d}),
+                           "impacto_calculado": calculados.get(d)})  # None sin modelo o si la tarea venia de antes
         for otra in impactos(cambios) - {d}:
             if ORDEN.index(otra) > ORDEN.index(d):
                 impactadas.setdefault(otra, []).append(f"(desde {d}) {' '.join(cambios.split())[:1500]}")
@@ -414,10 +478,17 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         cliente = vc.cliente()
         ctx = [_previa(ruta_cliente.stem, _leer(ruta_cliente), cliente)] + [
             _previa(e["informe"], _leer(RUN_DIR / e["informe"]), cliente) for e in ejecutadas]
+        def registrar_estados(m):  # estado de cada ECR, desde la tabla de verificacion del cliente
+            estados_v = leer_verificacion(_leer(ruta_verif))
+            registro["ecr_fuera_del_modelo_verificacion"] = sorted(e for e in estados_v if e not in m.elementos)
+            _registrar_codigo(m, ["Estado"], [[e, est] for e, est in sorted(estados_v.items()) if e in m.elementos],
+                              "cliente", registro)
+
         fallo = _intentar(lambda: _tarea(vc, "client_verification_task", cliente, ruta_verif, ctx,
                                          {"ITERACION": k, "ECR_ITERACION": ", ".join(atendidas)},
-                                         lambda t: None if leer_verificacion(t) else "falta la tabla | ECR | Criterio de aceptación | Estado | Evidencia |"),
-                          vc, inputs)
+                                         lambda t: None if leer_verificacion(t) else "falta la tabla | ECR | Criterio de aceptación | Estado | Evidencia |",
+                                         _vista("cliente")),
+                          vc, inputs, k, registrar_estados)
         if fallo:  # las correcciones quedan sin verificar: el integrador solo ve el estado anterior del cliente
             registro["resultado"] = "verificación fallida"
             registro["fallo"] = fallo
@@ -478,7 +549,13 @@ def integrador(vc: VdiCrew, inputs: dict, h: dict):
     if not ruta.exists():
         bases = INICIALES if not hubo_ciclo else INICIALES[:-1]
         ctx = _contexto_actual(vc, bases)
-        tarea = vc.design_board_integration_task()
+        base = vc.design_board_integration_task()
+        # la misma tarea con la vista del modelo (o sin la marca, si el modelo esta apagado)
+        tarea = Task(description=con_modelo(vc.tasks_config["design_board_integration_task"]["description"],
+                                            _vista("integrador")),
+                     expected_output=base.expected_output, agent=base.agent, output_file=base.output_file,
+                     name="design_board_integration_task", guardrail=base.guardrail,
+                     guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
         if hubo_ciclo:  # el informe original del cliente (matriz de conformidad) y su ultima verificacion
             ctx += [_previa(CLIENTE, _leer(_archivo(CLIENTE)), lider),
                     _previa(ultima_version(CLIENTE)[1].stem, _leer(ultima_version(CLIENTE)[1]), lider),
@@ -490,7 +567,14 @@ def integrador(vc: VdiCrew, inputs: dict, h: dict):
                          guardrail=_guardrail("design_board_integration_task", validar),
                          guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
         tarea.context = ctx
-        _ejecutar(vc, [tarea], inputs)
+        m = MODELO["m"]
+        if m:  # el integrador solo consulta: lo que registre se descarta
+            m.iniciar_tarea(DOSSIER)
+        try:
+            _ejecutar(vc, [tarea], inputs)
+        finally:
+            if m:
+                m.descartar()
     if hubo_ciclo:  # lo que quede sin respetar tras los reintentos, para el analisis
         h["discrepancias_cierre"] = discrepancias_cierre(_leer(ruta), cliente)
         _guardar_historial(h)
@@ -499,9 +583,17 @@ def integrador(vc: VdiCrew, inputs: dict, h: dict):
 
 def ejecutar(inputs: dict):
     """Corrida completa. Es idempotente: los pasos con informe ya escrito se saltan (reanudacion)."""
+    if MODELO_ACTIVO:
+        m = Modelo(RUN_DIR)
+        m.reconstruir({p.stem for p in RUN_DIR.glob("*.md")})
+        MODELO["m"] = m
+        usar_modelo(m)
     vc = VdiCrew()
     pasada_inicial(vc, inputs)
     h = _cargar_historial()
+    if MODELO["m"] and "comprobaciones_iniciales" not in h:  # K-01 a K-10 al terminar la pasada inicial
+        h["comprobaciones_iniciales"] = [f"{k}: {msg}" for k, msg in MODELO["m"].comprobar()]
+        _guardar_historial(h)
     if h.get("fin") is None:
         k = 1
         while k <= MAX_CICLOS:
@@ -514,4 +606,9 @@ def ejecutar(inputs: dict):
         _guardar_historial(h)
         registrar_evento("ciclo", {"iteraciones": len([i for i in h["iteraciones"] if i.get("resultado") == "completada"]),
                                    "fin": h["fin"], "escaladas": h["escaladas"]})
-    return integrador(VdiCrew(), inputs, h)
+    salida = integrador(VdiCrew(), inputs, h)
+    if MODELO["m"]:
+        h["comprobaciones_finales"] = [f"{k}: {msg}" for k, msg in MODELO["m"].comprobar()]
+        _guardar_historial(h)
+        MODELO["m"].exportar_rdf()
+    return salida

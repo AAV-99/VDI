@@ -538,6 +538,82 @@ class MatrizPonderada(BaseTool):
         return resultado
 
 
+# --- MODELO DE DISENO (F1) -----------------------------------------------------------------------
+# El modelo vive en ciclo.py (una instancia por corrida, con su transaccion por tarea); estas herramientas solo
+# lo leen y escriben con el rol del agente, que decide que puede modificar (capa de propiedad de modelo.py).
+
+MAX_REGISTROS_MODELO = 10
+MAX_CONSULTAS_MODELO = 6
+ROL_AGENTE = {"team_lead": "lider", "mecanico": "mecanica", "electronico": "electronica", "software": "software",
+              "mantenimiento": "rams", "cliente": "cliente"}
+_modelo = {"actual": None}
+
+
+def usar_modelo(modelo) -> None:
+    """ciclo.py fija aqui el modelo de la corrida (None lo desactiva)."""
+    _modelo["actual"] = modelo
+
+
+class _EntradaRegistro(BaseModel):
+    clase: str = Field(..., description="Clase de los elementos de la tabla: necesidad, requerimiento, funcion, modulo, "
+                                        "componente, parametro, interfaz, ecr o sistema.")
+    tabla: str = Field(..., description="Tabla Markdown con encabezado: la columna ID y las columnas de esa clase "
+                                        "descritas en las reglas del modelo de diseño. Una fila por elemento.")
+
+
+class RegistrarEnModelo(BaseTool):
+    name: str = "registrar_en_modelo"
+    description: str = (
+        "Registra o modifica elementos del modelo de diseño compartido con una tabla Markdown de una sola clase. "
+        "Un ID nuevo crea el elemento; uno existente modifica solo las columnas con valor; la columna Acción con "
+        "«eliminar» lo borra. La tabla se aplica completa o no se aplica: si hay errores, la respuesta los lista por "
+        "fila; corrígelos y envía otra vez la tabla completa. Solo puedes modificar los elementos de tu rol. Las "
+        "sumas de masa y costo y las comprobaciones las hace el código: no las registres."
+    )
+    args_schema: type[BaseModel] = _EntradaRegistro
+    max_usage_count: int | None = MAX_REGISTROS_MODELO
+    rol: str = ""
+
+    def _run(self, clase: str, tabla: str) -> str:
+        modelo = _modelo["actual"]
+        if modelo is None:
+            resultado = "El modelo de diseño no está activo en esta corrida."
+        else:
+            try:
+                resultado = modelo.registrar(clase, tabla, self.rol)
+            except Exception as error:  # un fallo del modelo no debe tumbar la tarea
+                resultado = f"Error al registrar: {type(error).__name__}: {error}"
+        _registrar(self.name, f"{self.rol} | {clase} | {tabla}", resultado)
+        return resultado
+
+
+class _EntradaConsultaModelo(BaseModel):
+    consulta: str = Field(..., description="Una de: 'elemento <ID>', 'trazabilidad <ID>', 'componentes <dominio>', "
+                                           "'presupuestos', 'requerimientos sin portador', 'ecr abiertas'.")
+
+
+class ConsultarModelo(BaseTool):
+    name: str = "consultar_modelo"
+    description: str = (
+        "Consulta el modelo de diseño compartido: un elemento por su ID, su trazabilidad (de qué deriva y qué lo "
+        "usa), los componentes de un dominio, los totales de masa y costo por módulo frente a su presupuesto "
+        "(calculados por el código), los requerimientos sin portador o las ECR abiertas."
+    )
+    args_schema: type[BaseModel] = _EntradaConsultaModelo
+    max_usage_count: int | None = MAX_CONSULTAS_MODELO
+
+    def _run(self, consulta: str) -> str:
+        modelo = _modelo["actual"]
+        resultado = modelo.consultar(consulta) if modelo is not None else "El modelo de diseño no está activo en esta corrida."
+        _registrar(self.name, consulta, resultado)
+        return resultado
+
+
+def herramientas_modelo(agente: str) -> list[BaseTool]:
+    """Herramientas del modelo para un agente de agents.yaml, con su rol (instancias nuevas: topes propios)."""
+    return [RegistrarEnModelo(rol=ROL_AGENTE[agente]), ConsultarModelo()] if agente in ROL_AGENTE else []
+
+
 def herramientas_agente(web: bool = False) -> list[BaseTool]:
     """Instancias nuevas para cada agente: cada una lleva su propio contador de usos por tarea."""
     return [BuscarManuales(), Calculadora(), MatrizPonderada()] + ([BuscarWeb()] if web else [])

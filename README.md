@@ -91,6 +91,7 @@ El comando lista los documentos, construye el índice si hace falta y muestra el
    | `VDI_RUN_DIR` | Carpeta de salida de la corrida | `output/<fecha_hora>` |
    | `VDI_CICLOS` | Máximo de iteraciones del ciclo de corrección; `0` lo apaga (flujo de las etapas anteriores) | `4` |
    | `VDI_HERRAMIENTAS` | `0` apaga todas las herramientas (configuración de las etapas anteriores) | Activas |
+   | `VDI_MODELO` | Modelo de diseño compartido: `0` lo apaga (configuración de E2); `1` lo activa aunque las herramientas estén apagadas | Activo con las herramientas |
    | `VDI_KNOWLEDGE_DIR` | Otra carpeta de documentos para el RAG | `knowledge/` |
    | `VDI_EMBEDDINGS` | Modelo de embeddings en Ollama para el RAG | `qwen3-embedding:0.6b` |
    | `TAVILY_API_KEY` | Clave de la API de búsqueda Tavily; también puede ir en un archivo `.env` en la raíz (ignorado por Git) | Sin clave no hay búsqueda web |
@@ -113,6 +114,7 @@ En un clúster con Slurm, el script de trabajo debe levantar Ollama dentro del t
 | `src/vdi/crews/vdicrew/config/metodologia.md` | Contexto metodológico común (VDI 2206 y herramientas de diseño conceptual) que reciben todos los agentes |
 | `src/vdi/crews/vdicrew/config/herramientas.md` | Reglas de uso de las herramientas que reciben los agentes cuando están activas |
 | `src/vdi/crews/vdicrew/config/busqueda_web.md` | Reglas de la búsqueda web (para qué se usa, citas con URL, qué vale como dato) |
+| `src/vdi/crews/vdicrew/config/modelo.md` | Reglas y columnas del modelo de diseño compartido; lo que registra cada tarea va en `tasks.yaml`, en las marcas `[[MODELO: ...]]` |
 
 Los topes de uso de cada herramienta están en `herramientas.py`; el modelo, el muestreo y los límites de tokens y palabras, en `vdicrew.py`; el número de iteraciones del ciclo, en `VDI_CICLOS`.
 
@@ -138,6 +140,7 @@ Cada corrida queda en su propia carpeta dentro de `output/` (ignorada por Git):
 | `_guardrail.log` | Resultado de la verificación de completitud y de formato de cada informe, con los reintentos |
 | `_llm.log` | Una línea por respuesta del modelo: tokens, tiempo, motivo de fin y herramientas pedidas |
 | `_herramientas.log` | Cada uso de una herramienta, con la tarea que lo pidió, el inicio del resultado y las fuentes devueltas (páginas de los manuales o URL) |
+| `_modelo_ops.jsonl`, `_modelo.json`, `_modelo.ttl` | Modelo de diseño compartido: cada operación confirmada (tarea, rol, iteración, ECR), la foto del modelo con sus totales y la exportación a RDF (Turtle) al final. En `_iteraciones.json` quedan además las comprobaciones K-01 a K-10 tras la pasada inicial y al final, y el impacto declarado frente al calculado de cada corrección |
 | `_web.jsonl` | Cada búsqueda web completa: consulta, y URL, título y extracto exacto de cada resultado que recibió el agente, para verificar las citas web |
 | `llm_vacias/` | Petición y respuesta completas de cada respuesta vacía del modelo, para analizarlas |
 | `corrida.log` | Log completo de CrewAI |
