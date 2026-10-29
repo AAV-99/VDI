@@ -11,7 +11,7 @@ requirements_ingestion_task:
     grippers o efectores finales y no componentes sueltos como eyectores o válvulas (fabricante y modelo, principio de sujeción, masa,
     carga o fuerza y URL de la fuente), y cómo fija o ajusta los valores objetivo de las especificaciones. Si no tienes la herramienta
     buscar_web, declara el benchmarking como actividad pendiente.
-    [[MODELO: Registra en el modelo las necesidades, los requerimientos con su Deriva de (y la columna Limita en los requerimientos que limitan la masa total y el costo total del sistema) y las funciones de la estructura funcional, con los mismos ID del informe.]]
+    [[MODELO: Registra en el modelo las necesidades, los requerimientos con su Deriva de (y la columna Limita en los requerimientos que limitan la masa total y el costo total del sistema) y las funciones de la estructura funcional, con los mismos ID del informe, y los elementos externos de la caja negra (X-xx: robot, pieza, gabinete, operador) con los datos conocidos. Solo esas clases: el sistema, los módulos, las interfaces y los parámetros se registran en la síntesis (01b).]]
     REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -32,7 +32,7 @@ system_synthesis_task:
     {primary_requirements}; (6) arquitectura del producto con módulos, asignación de subfunciones a módulos y dominios, e interfaces entre
     módulos; (7) matriz QFD etapa 2 de requerimientos frente a variables de diseño; (8) matriz de diseño axiomático con su diagnóstico de
     acoplamiento; (9) presupuestos preliminares de masa, costo y tiempo de ciclo repartidos por módulo, que las disciplinas deben respetar.
-    [[MODELO: Registra en el modelo el sistema SIS con el concepto seleccionado y su principio, los módulos con sus presupuestos de masa, costo y tiempo, la columna Módulo de cada función, las interfaces entre módulos y los parámetros de diseño del QFD etapa 2 con su Determina.]]
+    [[MODELO: Registra en el modelo el sistema SIS con el concepto seleccionado y su principio, los módulos con sus presupuestos de masa, costo y tiempo, la columna Módulo de cada función, las interfaces entre módulos y con los elementos externos, y los parámetros de diseño del QFD etapa 2 con su Determina. En Dominios de cada módulo nombra todas las disciplinas que trabajan en él: incluye software en el módulo donde corre el control.]]
     REGLA DE FORMATO: Usa tablas Markdown para la matriz morfológica, la evaluación, el QFD y la matriz axiomática, y diagramas Mermaid (```mermaid) para la estructura funcional y la arquitectura del producto. PROHIBIDO el uso de ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -54,7 +54,7 @@ mechanical_subsystem_design_task:
     modelo comercial candidato, el valor de su hoja de datos, si cumple y la fuente (URL, o Supuesto si no la tienes o no trae el valor);
     (7) BOM Preliminar Mecánico con material o referencia, cantidad, masa y costo por línea y totales que sumen. Los costos son
     estimaciones: márcalos como Supuesto e indica el criterio (precio típico del componente, o material por masa más mecanizado).
-    [[MODELO: Registra en el modelo cada línea de tu BOM como componente, con Satisface y Realiza (el BOM del informe usa los mismos ID CP-xx); los parámetros críticos de tu dimensionamiento con su Determina, y el protocolo o los niveles de las interfaces que te tocan. Los totales del BOM en el informe son los que devuelve consultar_modelo con presupuestos.]]
+    [[MODELO: Registra en el modelo cada línea de tu BOM como componente, con Satisface y Realiza (el BOM del informe usa los mismos ID CP-xx); registra solo los componentes de tu dominio: los sensores, válvulas y el cableado los registra electrónica aunque los montes tú. Registra también los parámetros críticos de tu dimensionamiento con su Determina, y el protocolo o los niveles de las interfaces que te tocan. Los totales del BOM en el informe son los que devuelve consultar_modelo con presupuestos.]]
     REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -77,7 +77,7 @@ electronic_subsystem_design_task:
     el modelo comercial candidato, el valor de su hoja de datos, si cumple y la fuente (URL, o Supuesto si no la tienes o no trae el valor);
     (6) BOM Preliminar Electrónico con referencia típica, cantidad, masa y costo por línea y totales que sumen. Los costos son
     estimaciones: márcalos como Supuesto e indica el criterio. No repitas en tu BOM componentes que ya estén en el BOM mecánico.
-    [[MODELO: Registra en el modelo cada línea de tu BOM como componente, con Satisface y Realiza (el BOM del informe usa los mismos ID CP-xx); los parámetros críticos de tu dimensionamiento con su Determina, y el protocolo o los niveles de las interfaces eléctricas y de señal. Los totales del BOM en el informe son los que devuelve consultar_modelo con presupuestos.]]
+    [[MODELO: Registra en el modelo cada línea de tu BOM como componente, con Satisface y Realiza (el BOM del informe usa los mismos ID CP-xx); registra solo los componentes de tu dominio: la estructura, los soportes y la tornillería los registra mecánica. Registra también los parámetros críticos de tu dimensionamiento con su Determina, y el protocolo o los niveles de las interfaces eléctricas y de señal. Los totales del BOM en el informe son los que devuelve consultar_modelo con presupuestos.]]
     REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.

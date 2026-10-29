@@ -257,6 +257,12 @@ def _vista(rol: str, extra: str = "") -> str:
     return m.vista(rol) + extra if m else ""
 
 
+def _vista_ecr(ecrs: list[str]) -> str:
+    # filas de las ECR asignadas y de los elementos que afectan, aunque sean de otro rol
+    texto = MODELO["m"].vista_ecr(ecrs) if MODELO["m"] else ""
+    return "\n\nTus ECR y los elementos que afectan:\n" + texto if texto else ""
+
+
 def _tarea(vc: VdiCrew, clave: str, agente, salida: Path, contexto: list, reemplazos: dict, validar=None,
            vista: str = "") -> Task:
     cfg = vc.tasks_config[clave]
@@ -451,7 +457,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
             fallo = _intentar(lambda: _tarea(vc, "domain_correction_task", agente, ruta_nueva, ctx, reemplazos,
                                              lambda t: None if seccion_cambios(t, k) and _tabla_con(seccion_cambios(t, k), "ecr", "impacto")
                                              else f"falta la sección '## Cambios de la iteración {k}' con su tabla de cambios",
-                                             _vista(rol)),
+                                             _vista(rol, _vista_ecr([f["ecr"] for f in ecrs]))),
                               vc, inputs, k, lambda m: calculados.__setitem__(d, m.impacto_pendiente(d)))
             if fallo:
                 fallidas_correccion[d] = {"ecr": [f["ecr"] for f in ecrs], "motivo": fallo}

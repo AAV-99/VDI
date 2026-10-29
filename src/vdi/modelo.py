@@ -82,8 +82,8 @@ DOMINIOS = ("mecanica", "electronica", "software")
 NIVELES = ("N1", "N2", "N3", "N4")
 PREFIJOS = {"N": "necesidad", "RF": "requerimiento", "RNF": "requerimiento", "R": "requerimiento",
             "E": "requerimiento", "F": "funcion", "M": "modulo", "CP": "componente", "DP": "parametro",
-            "I": "interfaz", "ECR": "ecr", "SIS": "sistema"}
-ID_RE = re.compile(r"^(RNF|RF|ECR|CP|DP|SIS|N|R|E|F|M|I)[\s\-‐‑‒–]?0*(\d{1,3})$|^(SIS)$", re.I)
+            "I": "interfaz", "ECR": "ecr", "SIS": "sistema", "X": "externo"}
+ID_RE = re.compile(r"^(RNF|RF|ECR|CP|DP|SIS|N|R|E|F|M|I|X)[\s\-‐‑‒–]?0*(\d{1,3})$|^(SIS)$", re.I)
 
 
 class Elemento(BaseModel):
@@ -152,8 +152,8 @@ CLASES = {
         "nivel": (("nivel", "nivel de evidencia"), "nivel", False),
     },
     "interfaz": {
-        "extremo_a": (("extremo a", "desde", "de"), "id:modulo|componente", True),
-        "extremo_b": (("extremo b", "hacia", "a"), "id:modulo|componente", True),
+        "extremo_a": (("extremo a", "desde", "de"), "id:modulo|componente|externo", True),
+        "extremo_b": (("extremo b", "hacia", "a"), "id:modulo|componente|externo", True),
         "tipo": (("tipo",), "enum:mecanica|energia|señal|datos|material", True),
         "protocolo": (("protocolo o niveles", "protocolo", "niveles"), "texto", False),
     },
@@ -165,6 +165,12 @@ CLASES = {
         "tipo": (("tipo",), "enum:corregible|prueba|cotizacion", False),
         "estado": (("estado",), "enum:abierta|cumple|no_cumple|pendiente", False),
     },
+    # lo que esta fuera del sistema y con lo que tiene interfaces (robot, gabinete, pieza, operador): caja negra
+    "externo": {
+        "nombre": (("nombre", "elemento", "externo", "elemento externo"), "texto", True),
+        "tipo": (("tipo",), "texto", False),
+        "descripcion": (("descripcion", "datos", "datos conocidos"), "texto", False),
+    },
     "sistema": {
         "concepto": (("concepto", "concepto seleccionado"), "texto", True),
         "principio": (("principio", "principio de solucion"), "texto", False),
@@ -172,7 +178,8 @@ CLASES = {
 }
 # duenos por clase (y por campo cuando difieren); los componentes y sus parametros son de su dominio
 DUENOS = {"necesidad": {"lider"}, "requerimiento": {"lider"}, "funcion": {"lider"}, "modulo": {"lider"},
-          "sistema": {"lider"}, "interfaz": {"lider"}, "ecr": {"cliente"}}
+          "sistema": {"lider"}, "interfaz": {"lider"}, "ecr": {"cliente"},
+          "externo": {"lider"}}
 DUENOS_CAMPO = {("interfaz", "protocolo"): {"lider", *DOMINIOS},
                 ("ecr", "disciplina"): {"lider"}, ("ecr", "tipo"): {"lider"}}
 COMPARADORES = {"<=": "≤", "=<": "≤", "≤": "≤", "<": "≤", "max": "≤", "máx": "≤", ">=": "≥", "=>": "≥", "≥": "≥",
@@ -201,7 +208,8 @@ def nombre_clase(texto: str) -> str | None:
     alias = {"necesidade": "necesidad", "requerimiento": "requerimiento", "requisito": "requerimiento",
              "funcione": "funcion", "funcion": "funcion", "modulo": "modulo", "componente": "componente",
              "parametro": "parametro", "interface": "interfaz", "interfaz": "interfaz", "interfac": "interfaz",
-             "ecr": "ecr", "sistema": "sistema", "necesidad": "necesidad"}
+             "ecr": "ecr", "sistema": "sistema", "necesidad": "necesidad", "externo": "externo",
+             "elemento externo": "externo", "elementos externo": "externo"}
     return alias.get(t) or (t if t in CLASES else None)
 
 
@@ -375,6 +383,11 @@ class Modelo:
             return op, err, avisos
         campos = {}
         for campo, texto in celda.items():
+            # unidad «—» explicita en un requerimiento: adimensional o cualitativo a proposito (K-01 no avisa); al
+            # modificar, «-» o «—» siguen siendo «sin cambio» para no borrar la unidad de un requerimiento existente
+            if (clase, campo) == ("requerimiento", "unidad") and texto and sin_tildes(texto).strip().lower() in SIN_UNIDAD                     and not (existe and texto in ("-", "—")):
+                campos[campo] = "—"
+                continue
             if not texto or texto in ("-", "—"):
                 continue
             try:
@@ -593,7 +606,7 @@ class Modelo:
     def comprobar(self, cuales: list[str] | None = None) -> list[tuple[str, str]]:
         """(K, mensaje) de las comprobaciones pedidas (todas por defecto). Solo avisan; no cambian nada."""
         salida = []
-        reqs = [r for r in self.de_clase("requerimiento") if r.id.split("-")[0] in ("RF", "RNF", "R")]
+        reqs = self.de_clase("requerimiento")  # RF, RNF, R y E (las especificaciones no derivan de una necesidad: K-02)
         comps = self.de_clase("componente")
         modulos = self.de_clase("modulo")
         todas = cuales or [f"K-{n:02d}" for n in range(1, 11)]
@@ -601,9 +614,11 @@ class Modelo:
             for r in reqs:
                 faltan = [c for c in ("valor", "unidad", "comparador", "verificacion") if r.campos.get(c) in (None, "")]
                 if faltan:
-                    salida.append(("K-01", f"{r.id} sin {', '.join(faltan)}"))
+                    salida.append(("K-01", f"{r.id} sin {', '.join(faltan)}" +
+                                   (" (escribe — en Unidad si es adimensional o cualitativo)" if "unidad" in faltan else "")))
         if "K-02" in todas:
-            salida += [("K-02", f"{r.id} no deriva de ninguna necesidad") for r in reqs if not r.campos.get("deriva_de")]
+            salida += [("K-02", f"{r.id} no deriva de ninguna necesidad") for r in reqs
+                       if not r.campos.get("deriva_de") and not r.id.startswith("E-")]
         if "K-03" in todas:
             salida += [("K-03", f"{f.id} no está asignada a un módulo") for f in self.de_clase("funcion") if not f.campos.get("modulo")]
             salida += [("K-03", f"{m.id} sin presupuesto de {d}") for m in modulos for d in ("masa", "costo")
@@ -641,7 +656,7 @@ class Modelo:
                     texto = f"{p.id} {p.campos.get('nombre', '')} = {p.campos.get('valor'):g} {p.campos.get('unidad', '')}".strip()
                     if not ok:
                         salida.append(("K-06", f"{texto} no cumple {rid} ({r.campos.get('comparador')} {r.campos.get('valor')} {r.campos.get('unidad', '')})"))
-                    elif uso >= 0.9:
+                    elif uso >= 0.9 and r.campos.get("comparador") != "=":
                         salida.append(("K-06", f"{texto} usa el {uso:.0%} de {rid}"))
         if "K-07" in todas:
             for a in comps:
@@ -699,7 +714,8 @@ class Modelo:
             return "El modelo de diseño está vacío."
         partes = []
         if rol in ("lider", "cliente", "integrador"):
-            for clase in ("sistema", "necesidad", "requerimiento", "funcion", "modulo", "interfaz", "componente", "parametro", "ecr"):
+            for clase in ("sistema", "externo", "necesidad", "requerimiento", "funcion", "modulo", "interfaz", "componente",
+                          "parametro", "ecr"):
                 es = self.de_clase(clase)
                 if es:
                     partes.append(f"{clase.capitalize()}:\n" + "\n".join(self._fila_texto(e) for e in es))
@@ -711,6 +727,8 @@ class Modelo:
             ifs = [i for i in self.de_clase("interfaz") if {i.campos.get("extremo_a"), i.campos.get("extremo_b")} & ids_mods
                    or rol in {self._dominio_de(i.campos.get("extremo_a")), self._dominio_de(i.campos.get("extremo_b"))}]
             partes.append("Interfaces que te tocan:\n" + "\n".join(self._fila_texto(i) for i in ifs))
+            if self.de_clase("externo"):
+                partes.append("Elementos externos:\n" + "\n".join(self._fila_texto(x) for x in self.de_clase("externo")))
             propios = [c for c in self.de_clase("componente") if c.campos.get("dominio") == rol or rol == "rams"]
             partes.append(("Componentes" if rol == "rams" else "Tus componentes") + ":\n" +
                           ("\n".join(self._fila_texto(c) for c in propios) or "ninguno"))
@@ -756,7 +774,7 @@ class Modelo:
         e = self.elementos.get(i)
         if not e:
             return None
-        if e.clase in ("necesidad", "requerimiento"):
+        if e.clase in ("necesidad", "requerimiento", "externo"):  # los externos salen de la caja negra (Fase 1)
             return "requerimientos"
         if e.clase == "parametro" and e.creado_por == "rams":
             return "rams"
@@ -775,6 +793,17 @@ class Modelo:
             lineas.append(f"- {e.id}: afecta {', '.join(afecta) or 'ningún elemento registrado'}"
                           f" -> {', '.join(ds) if ds else 'sin sugerencia'}")
         return "\n".join(lineas) or "- No hay ECR abiertas en el modelo."
+
+    def vista_ecr(self, ecrs: list[str]) -> str:
+        """Las ECR asignadas a una correccion y las filas de los elementos que afectan (evita consultarlos uno a uno)."""
+        lineas = []
+        for i in ecrs:
+            e = self.elementos.get(i)
+            if not e:
+                continue
+            lineas.append(self._fila_texto(e))
+            lineas += ["  " + self._fila_texto(self.elementos[j]) for j in e.campos.get("afecta", []) if j in self.elementos]
+        return "\n".join(lineas)
 
     def impacto_pendiente(self, disciplina: str) -> list[str]:
         """Disciplinas, distintas de la que corrige, con elementos que usan lo que cambio la tarea en curso (impacto
@@ -953,6 +982,27 @@ if __name__ == "__main__":
     mod.registrar("requerimiento", "| ID | Valor | ECR |\n|---|---|---|\n| RF-01 | 25 | ECR-01 |", "lider")
     imp = mod.impacto_pendiente("requerimientos")
     debe(imp and "requerimientos" not in imp, "calcula el impacto de un cambio sobre otras disciplinas", str(imp))
+    v = mod.vista_ecr(["ECR-01"])
+    debe(v.startswith("- ECR-01") and "CP-03" in v and "CP-04" in v, "vista de una corrección: la ECR y lo que afecta", v)
+    r = mod.registrar("externo", "| ID | Nombre | Tipo | ECR |\n|---|---|---|---|\n| X-01 | Brida del robot | robot | ECR-01 |", "lider")
+    r2 = mod.registrar("interfaz", "| ID | Extremo A | Extremo B | Tipo | ECR |\n|---|---|---|---|---|\n"
+                       "| I-02 | X-01 | M-01 | mecánica | ECR-01 |", "lider")
+    debe(r.startswith("Aplicadas 1") and r2.startswith("Aplicadas 1") and mod.disciplina_de("X-01") == "requerimientos",
+         "un elemento externo puede ser extremo de una interfaz", r + r2)
+    r = mod.registrar("requerimiento", "| ID | Requerimiento | Comparador | Valor | Unidad | Verificación | ECR |\n|---|---|---|---|---|---|---|\n"
+                      "| E-09 | Tensión de control | = | 24 | V | Medición | ECR-01 |\n"
+                      "| R-09 | Señal de pieza presente | = | 1 | — | Prueba | ECR-01 |", "lider")
+    mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Determina | ECR |\n|---|---|---|---|---|---|---|\n"
+                  "| DP-09 | Tensión | 24 | V | M-01 | E-09 | ECR-01 |", "lider")
+    k = mod.comprobar(["K-01", "K-06"])
+    debe(r.startswith("Aplicadas 2") and not any("DP-09" in m or "R-09" in m for _, m in k),
+         "«—» como unidad y sin aviso de uso con «=» si el valor coincide", r + str(k))
+    mod.registrar("requerimiento", "| ID | Requerimiento | Comparador | Valor | Unidad | Verificación | ECR |\n|---|---|---|---|---|---|---|\n"
+                  "| R-10 | Holgura | ≥ | 2 | | Medición | ECR-01 |\n"
+                  "| E-09 | — | — | 24 | — | — | ECR-01 |", "lider")
+    k = mod.comprobar(["K-01"])
+    debe(any("R-10 sin unidad" in m for _, m in k) and mod.elementos["E-09"].campos["unidad"] == "V",
+         "K-01 avisa de una unidad vacía; «—» al modificar no borra la unidad", str(k))
     mod.descartar()
     mod.iniciar_tarea("domain_correction_task", iteracion=1)
     r = mod.registrar("componente", "| ID | Acción |\n|---|---|\n| CP-03 | eliminar |", "mecanica")
