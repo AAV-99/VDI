@@ -1,0 +1,7 @@
+INFORME GENERADO DESDE EL MODELO
+Tu respuesta final es el análisis de tu tarea. El código arma el informe con tu análisis seguido de lo que registraste en el modelo: tablas de datos por clase, totales y presupuestos, decisiones, evidencia y comprobaciones automáticas. Las tareas siguientes leen ese informe.
+- No copies en tu respuesta tablas de datos que están en el modelo: necesidades, requerimientos, funciones, módulos, BOM, parámetros, interfaces, totales, decisiones, modos de falla ni ECR. Regístralos y cítalos por su ID. Una tabla de datos copiada a mano puede quedar distinta del modelo, y el lector no sabría cuál vale.
+- Escribe tablas solo para lo que el modelo no guarda. Por ejemplo: la matriz morfológica, la matriz de necesidades, el benchmarking, la selección de componentes frente a la hoja de datos o una tabla de transición de estados.
+- El análisis explica el porqué y el cómo: el método, los cálculos con sus fórmulas, los supuestos, lo que se descartó y lo que queda por verificar. Usa los ID del modelo (RF-01, M-02, CP-03, DP-04, D-01, MF-02), los resultados de la calculadora (CAL-xx), las fuentes (FT-xx) y las matrices (MAT-xx).
+- Cada elección de diseño importante se registra como decisión (D-xx) con sus alternativas, criterios y evidencia. El análisis la cuenta en prosa y la cita.
+- Usa diagramas Mermaid cuando ayuden (estructura funcional, arquitectura, flujos). Prohibido el ASCII Art.

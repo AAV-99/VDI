@@ -8,12 +8,17 @@ las incoherencias. Los informes siguen escribiendose y pasando como contexto, ig
 Esquema (VDI/VDE 2206:2021): necesidades N, requerimientos RF/RNF/R/E, funciones F, modulos M, componentes CP,
 parametros DP, interfaces I, ECR y el sistema SIS (concepto y principio). Relaciones: deriva_de (requerimiento ->
 necesidad), asignada_a (funcion -> modulo), pertenece_a (componente -> modulo), realiza (componente -> funcion),
-satisface (componente o modulo -> requerimiento), determina (parametro -> requerimiento), conecta (interfaz -> dos
-extremos), afecta (ECR -> elementos).
+satisface (componente o modulo -> requerimiento), mide (parametro -> requerimiento cuyo valor es el parametro),
+determina (parametro -> requerimiento al que contribuye), conecta (interfaz -> dos extremos), afecta (ECR -> elementos).
+
+F2 agrega la justificacion: decisiones D-xx (asunto, alternativas, criterios, elegida, justificacion, evidencia y los
+elementos que justifica; una decision reemplazada queda en el modelo), modos de falla MF-xx (FMEA de RAMS) y la
+evidencia que crea el codigo al usar las herramientas: calculos CAL-xx, fuentes FT-xx (solo las que algun agente
+cita) y matrices MAT-xx. Los agentes no registran evidencia: la citan por su ID.
 
 Validacion en cuatro capas: 1) esquema (campos, enumeraciones, unidades con pint), 2) referencias (IDs existentes;
 RF01 o RF-001 se normalizan a RF-01 con aviso), 3) propiedad (cada clase y campo tiene duenos) y 4) coherencia
-(comprobaciones K-01 a K-10, solo avisos). Las capas 1 a 3 rechazan la tabla entera: se aplica toda o nada.
+(comprobaciones K-01 a K-16, solo avisos). Las capas 1 a 3 rechazan la tabla entera: se aplica toda o nada.
 
 Transacciones: los cambios de una tarea van a una copia de trabajo y se confirman cuando la tarea termina bien
 (se escriben en _modelo_ops.jsonl y _modelo.json) o se descartan si falla. Al reanudar, el modelo se reconstruye
@@ -67,6 +72,19 @@ def numero(texto: str) -> float:
     return float(m.group(0).replace(",", "."))
 
 
+def numero_en_texto(valor: float, texto: str) -> bool:
+    """¿Aparece el valor en el texto? Acepta coma o punto decimal, separador de miles y un factor 1000 (g y kg,
+    mm y m), porque el extracto puede usar otra unidad que el parametro."""
+    vistos = set()
+    for t in re.findall(r"\d[\d.,]*\d|\d", texto or ""):
+        for v in (t.replace(",", "."), t.replace(",", ""), t.replace(".", "").replace(",", ".")):
+            try:
+                vistos.add(float(v))
+            except ValueError:
+                pass
+    return any(abs(x - valor * f) <= 1e-6 * max(1.0, abs(valor * f)) for x in vistos for f in (1, 1000, 0.001))
+
+
 def separar_cantidad(texto: str) -> tuple[float, str]:
     """«0,012 kg» -> (0.012, 'kg'). Lanza ValueError si no hay numero o la unidad no existe."""
     texto = (texto or "").strip()
@@ -88,8 +106,12 @@ DOMINIOS = ("mecanica", "electronica", "software")
 NIVELES = ("N1", "N2", "N3", "N4")
 PREFIJOS = {"N": "necesidad", "RF": "requerimiento", "RNF": "requerimiento", "R": "requerimiento",
             "E": "requerimiento", "F": "funcion", "M": "modulo", "CP": "componente", "DP": "parametro",
-            "I": "interfaz", "ECR": "ecr", "SIS": "sistema", "X": "externo"}
-ID_RE = re.compile(r"^(RNF|RF|ECR|CP|DP|SIS|N|R|E|F|M|I|X)[\s\-‐‑‒–]?0*(\d{1,3})$|^(SIS)$", re.I)
+            "I": "interfaz", "ECR": "ecr", "SIS": "sistema", "X": "externo",
+            "D": "decision", "MF": "modo_falla", "CAL": "calculo", "FT": "fuente", "MAT": "matriz"}
+ID_RE = re.compile(r"^(RNF|RF|ECR|CP|DP|SIS|CAL|MAT|MF|FT|N|R|E|F|M|I|X|D)[\s\-‐‑‒–]?0*(\d{1,3})$|^(SIS)$", re.I)
+EVIDENCIA = ("calculo", "fuente", "matriz")  # las crea el codigo al usar las herramientas; los agentes las citan
+# campos de trazabilidad: cambiarlos no cambia el diseno, asi que no invalidan la decision que lo justifica (K-13)
+TRAZA = {"satisface", "realiza", "mide", "determina", "deriva_de", "fuente", "nivel", "iteracion"}
 
 
 class Elemento(BaseModel):
@@ -98,6 +120,7 @@ class Elemento(BaseModel):
     campos: dict = {}
     creado_por: str = ""
     tarea: str = ""
+    cambio: int = 0  # paso (tarea y rol) del ultimo cambio de diseno, para K-13
 
 
 # columnas de cada clase: campo -> (encabezados aceptados, tipo, obligatorio al crear)
@@ -153,7 +176,10 @@ CLASES = {
         "valor": (("valor",), "valor", True),
         "unidad": (("unidad",), "unidad", False),
         "elemento": (("elemento", "pertenece a"), "id:sistema|modulo|componente", True),
-        "determina": (("determina",), "ids:requerimiento", False),
+        # mide: el parametro ES el valor que se compara con la meta del requerimiento (K-06 los compara);
+        # determina: el parametro contribuye al requerimiento pero no es su medida
+        "mide": (("mide",), "ids:requerimiento", False),
+        "determina": (("determina", "contribuye a", "contribuye"), "ids:requerimiento", False),
         "fuente": (("fuente",), "texto", False),
         "nivel": (("nivel", "nivel de evidencia"), "nivel", False),
     },
@@ -181,11 +207,52 @@ CLASES = {
         "concepto": (("concepto", "concepto seleccionado"), "texto", True),
         "principio": (("principio", "principio de solucion"), "texto", False),
     },
+    # decision de diseno (IBIS/QOC en una fila): pregunta, opciones, criterios, eleccion y su argumento
+    "decision": {
+        "asunto": (("asunto", "pregunta", "decision"), "texto", True),
+        "alternativas": (("alternativas", "opciones"), "texto", True),  # separadas por «;»
+        "criterios": (("criterios",), "ids:requerimiento", True),
+        "elegida": (("elegida", "alternativa elegida", "opcion elegida"), "texto", True),
+        "justificacion": (("justificacion", "por que"), "texto", True),
+        "evidencia": (("evidencia", "respaldo"), "ids:calculo|fuente|matriz|parametro", False),
+        "justifica": (("justifica", "elementos que fija", "fija"), "ids:sistema|modulo|funcion|componente|parametro|interfaz", True),
+        "motivada_por": (("motivada por", "motivo"), "ids:ecr|requerimiento", False),
+        "reemplaza": (("reemplaza",), "id:decision", False),
+    },
+    # modo de falla (FMEA de RAMS); el RPN = S x O x D lo calcula el codigo
+    "modo_falla": {
+        "elemento": (("elemento", "componente", "modulo"), "id:sistema|modulo|componente", True),
+        "modo": (("modo", "modo de falla"), "texto", True),
+        "efecto": (("efecto",), "texto", True),
+        "causa": (("causa",), "texto", False),
+        "s": (("s", "severidad"), "entero110", True),
+        "o": (("o", "ocurrencia"), "entero110", True),
+        "d": (("d", "deteccion"), "entero110", True),
+        "mitigacion": (("accion recomendada", "mitigacion", "medida"), "texto", False),
+    },
+    # evidencia (la crea el codigo; ver Modelo.nueva_evidencia)
+    "calculo": {
+        "expresion": (("expresion",), "texto", True),
+        "resultado": (("resultado",), "texto", True),
+    },
+    "fuente": {
+        "documento": (("documento", "url"), "texto", True),
+        "titulo": (("titulo",), "texto", False),
+        "ubicacion": (("ubicacion", "pagina"), "texto", False),
+        "consulta": (("consulta",), "texto", False),
+        "extracto": (("extracto",), "texto", False),
+    },
+    "matriz": {
+        "tipo": (("tipo",), "texto", True),
+        "tabla": (("tabla",), "texto", False),
+        "resultado": (("resultado", "ranking"), "texto", True),
+    },
 }
-# duenos por clase (y por campo cuando difieren); los componentes y sus parametros son de su dominio
+# duenos por clase (y por campo cuando difieren); los componentes y sus parametros son de su dominio; las
+# decisiones, de quien es dueno de lo que justifican (ver _dueno)
 DUENOS = {"necesidad": {"lider"}, "requerimiento": {"lider"}, "funcion": {"lider"}, "modulo": {"lider"},
           "sistema": {"lider"}, "interfaz": {"lider"}, "ecr": {"cliente"},
-          "externo": {"lider"}}
+          "externo": {"lider"}, "modo_falla": {"rams"}, "calculo": set(), "fuente": set(), "matriz": set()}
 DUENOS_CAMPO = {("interfaz", "protocolo"): {"lider", *DOMINIOS},
                 ("ecr", "disciplina"): {"lider"}, ("ecr", "tipo"): {"lider"}}
 COMPARADORES = {"<=": "≤", "=<": "≤", "≤": "≤", "<": "≤", "max": "≤", "máx": "≤", ">=": "≥", "=>": "≥", "≥": "≥",
@@ -205,6 +272,12 @@ def normalizar_id(texto: str) -> str | None:
     return f"{m.group(1).upper()}-{int(m.group(2)):02d}"
 
 
+def ids_en_texto(texto: str) -> list[str]:
+    """IDs citados dentro de un texto libre («Manual p. 12, FT-03 y CAL-2» -> FT-03, CAL-02)."""
+    patron = r"\b(?:RNF|RF|ECR|CP|DP|CAL|MAT|MF|FT|SIS|N|R|E|F|M|I|X|D)[\-‐‑‒–]?\d{1,3}\b|\bSIS\b"
+    return list(dict.fromkeys(j for t in re.findall(patron, texto or "") if (j := normalizar_id(t))))
+
+
 def clase_de_id(i: str) -> str | None:
     return PREFIJOS.get(i.split("-")[0]) if i else None
 
@@ -215,7 +288,10 @@ def nombre_clase(texto: str) -> str | None:
              "funcione": "funcion", "funcion": "funcion", "modulo": "modulo", "componente": "componente",
              "parametro": "parametro", "interface": "interfaz", "interfaz": "interfaz", "interfac": "interfaz",
              "ecr": "ecr", "sistema": "sistema", "necesidad": "necesidad", "externo": "externo",
-             "elemento externo": "externo", "elementos externo": "externo"}
+             "elemento externo": "externo", "elementos externo": "externo", "decisione": "decision",
+             "decision": "decision", "modo de falla": "modo_falla", "modos de falla": "modo_falla",
+             "modo_falla": "modo_falla", "calculo": "calculo", "fuente": "fuente", "matrice": "matriz",
+             "matriz": "matriz"}
     return alias.get(t) or (t if t in CLASES else None)
 
 
@@ -248,6 +324,9 @@ class Modelo:
         self._confirmado: dict[str, Elemento] = {}
         self._pendientes: list[dict] = []
         self.tarea, self.iteracion = "-", 0
+        self._paso, self._clave_paso = 0, None  # contador de (tarea, iteracion, rol) para Elemento.cambio
+        # fuentes que devolvieron las herramientas y aun nadie cita: entran al modelo cuando un agente las cita
+        self._candidatas: dict[str, tuple[str, dict, str]] = {}  # ID -> (clase, campos, rol)
 
     # --- transacciones ---
 
@@ -280,6 +359,7 @@ class Modelo:
     def reconstruir(self, tareas_validas: set[str] | None = None) -> int:
         """Reproduce las operaciones confirmadas (de las tareas cuyo informe existe, si se indican)."""
         self.elementos = {}
+        self._paso, self._clave_paso = 0, None
         n = 0
         if self.ops_ruta.exists():
             for linea in self.ops_ruta.read_text(encoding="utf-8").split("\n"):
@@ -294,14 +374,21 @@ class Modelo:
         return n
 
     def _aplicar(self, op: dict) -> None:
+        clave = (op["tarea"], op["iteracion"], op["rol"])
+        if clave != self._clave_paso:
+            self._paso, self._clave_paso = self._paso + 1, clave
         i = op["id"]
         if op["accion"] == "eliminar":
             self.elementos.pop(i, None)
         elif i in self.elementos:
-            self.elementos[i].campos.update(op["campos"])
+            e = self.elementos[i]
+            # el agente suele reenviar la fila completa: solo cuenta como cambio de diseno lo que de verdad cambio
+            if any(e.campos.get(k) != v for k, v in op["campos"].items() if k not in TRAZA):
+                e.cambio = self._paso
+            e.campos.update(op["campos"])
         else:
             self.elementos[i] = Elemento(id=i, clase=op["clase"], campos=dict(op["campos"]),
-                                         creado_por=op["rol"], tarea=op["tarea"])
+                                         creado_por=op["rol"], tarea=op["tarea"], cambio=self._paso)
 
     # --- escritura (capas 1 a 3) ---
 
@@ -309,7 +396,10 @@ class Modelo:
         """Valida la tabla completa y la aplica toda o nada. Devuelve el resumen o la lista de errores por fila."""
         clase = nombre_clase(clase_texto)
         if not clase:
-            return f"Clase «{clase_texto}» desconocida. Clases: {', '.join(CLASES)}."
+            return f"Clase «{clase_texto}» desconocida. Clases: {', '.join(c for c in CLASES if c not in EVIDENCIA)}."
+        if clase in EVIDENCIA:
+            return ("Los cálculos (CAL-xx), las fuentes (FT-xx) y las matrices (MAT-xx) los registra el código al usar "
+                    "las herramientas: no se registran a mano; cita su ID en Fuente o en Evidencia.")
         encabezado, filas = leer_tabla(tabla)
         if not filas:
             return "No encontré una tabla Markdown con encabezado y al menos una fila."
@@ -328,9 +418,15 @@ class Modelo:
         if errores:
             return "Tabla rechazada, no se aplicó nada. Corrige y vuelve a enviar la tabla completa:\n" + \
                 "\n".join(f"- {e}" for e in errores)
+        # las fuentes citadas por primera vez entran al modelo antes que las filas que las citan
+        for j in sorted(nuevos.get("_citadas", ())):
+            if j not in self.elementos and j in self._candidatas:
+                clase_ev, campos_ev, rol_ev = self._candidatas.pop(j)
+                ops.insert(0, self._op("crear", clase_ev, j, campos_ev, rol_ev, None))
         for op in ops:
             self._aplicar(op)
             self._pendientes.append(op)
+        ops = [o for o in ops if o["clase"] == clase]  # el resumen cuenta solo las filas de la tabla
         cuenta = {a: sum(o["accion"] == a for o in ops) for a in ("crear", "modificar", "eliminar")}
         resumen = f"Aplicadas {len(ops)} filas de {clase}: " + ", ".join(f"{v} {k}" for k, v in cuenta.items() if v) + "."
         return resumen + ("\nAvisos:\n" + "\n".join(f"- {a}" for a in avisos) if avisos else "")
@@ -381,10 +477,15 @@ class Modelo:
             if not existe:
                 return None, errores + [f"{i} no existe: no se puede eliminar"], []
             err = errores + self._propiedad(clase, i, {}, rol)
-            # las ECR que lo afectan no impiden eliminarlo: quedan como historia del cambio
-            dependientes = [e.id for e in self.elementos.values() if e.clase != "ecr" and i in self._referencias(e)]
+            # las ECR que lo afectan no impiden eliminarlo: quedan como historia del cambio; las decisiones y los
+            # modos de falla que lo citan tampoco (son de otro dueno): quedan senalados por K-13 y K-16
+            citan = {e.id for e in self.elementos.values() if e.clase in ("decision", "modo_falla") and i in self._referencias(e)}
+            dependientes = [e.id for e in self.elementos.values()
+                            if e.clase not in ("ecr", "decision", "modo_falla") and i in self._referencias(e)]
             if dependientes:
                 err.append(f"no se puede eliminar {i}: lo usan {', '.join(dependientes)}; cámbialos primero")
+            if citan:
+                avisos.append(f"{', '.join(sorted(citan))} citan {i}: quedan señalados en las comprobaciones")
             op = None if err else self._op("eliminar", clase, i, {}, rol, ecr)
             return op, err, avisos
         campos = {}
@@ -415,6 +516,10 @@ class Modelo:
         if clase == "ecr" and not existe:
             campos.setdefault("estado", "abierta")
             campos["iteracion"] = self.iteracion
+        if clase == "decision" and not existe and ecr and "motivada_por" not in campos:
+            campos["motivada_por"] = [ecr]  # en el ciclo, la ECR que la provoca
+        if clase == "decision" and campos.get("reemplaza") == i:
+            errores.append(f"{i} no puede reemplazarse a sí misma")
         if clase == "requerimiento" and "limita" in campos:
             nuevos_limita = nuevos.setdefault("_limita", {})  # entre filas de la misma tabla
             final = {**(self.elementos[i].campos if existe else {}), **campos}
@@ -442,11 +547,20 @@ class Modelo:
     def _convertir(self, clase: str, campo: str, texto: str, nuevos: dict, avisos: list):
         tipo = CLASES[clase][campo][1]
         if tipo == "texto":
+            if campo == "fuente":  # las citas a evidencia dentro del texto deben existir (o ser fuentes candidatas)
+                for j in ids_en_texto(texto):
+                    if clase_de_id(j) not in EVIDENCIA:
+                        continue
+                    if j in self._candidatas:
+                        nuevos.setdefault("_citadas", set()).add(j)
+                    elif j not in self.elementos:
+                        raise ValueError(f"{j} no existe: cita un ID que te haya devuelto una herramienta")
             return texto
-        if tipo in ("entero", "entero15"):
+        if tipo in ("entero", "entero15", "entero110"):
             v = numero(texto)
-            if v != int(v) or v < 1 or (tipo == "entero15" and v > 5):
-                raise ValueError(f"«{texto}» debe ser un entero {'de 1 a 5' if tipo == 'entero15' else 'mayor que 0'}")
+            tope = {"entero15": 5, "entero110": 10}.get(tipo)
+            if v != int(v) or v < 1 or (tope and v > tope):
+                raise ValueError(f"«{texto}» debe ser un entero {f'de 1 a {tope}' if tope else 'mayor que 0'}")
             return int(v)
         if tipo.startswith("enum:"):
             opciones = tipo[5:].split("|")
@@ -503,7 +617,11 @@ class Modelo:
                 if "*" not in permitidas and clase_de_id(j) not in permitidas:
                     pista = "; SIS no es un módulo: usa el M-xx que contiene la función" if j == "SIS" else ""
                     raise ValueError(f"{j} es {clase_de_id(j)}; aquí va {' o '.join(permitidas)}{pista}")
-                if j not in self.elementos and j not in nuevos:
+                if j in self._candidatas and j not in self.elementos:
+                    nuevos.setdefault("_citadas", set()).add(j)
+                elif j not in self.elementos and j not in nuevos:
+                    if clase_de_id(j) in EVIDENCIA:
+                        raise ValueError(f"{j} no existe: cita un ID que te haya devuelto una herramienta")
                     existentes = sorted(e for e in self.elementos if clase_de_id(e) == clase_de_id(j))
                     lista = f"; existen: {', '.join(existentes)}" if existentes else f"; aún no hay {clase_de_id(j)}"
                     raise ValueError(f"{j} no existe{lista}")
@@ -527,6 +645,15 @@ class Modelo:
             else:
                 base = {"lider"}
             return base | {"rams"}  # RAMS agrega parametros de confiabilidad a cualquier elemento
+        if clase == "decision":
+            # el lider decide sobre cualquier elemento; un dominio, solo si es dueno de todo lo que la decision justifica
+            just = campos.get("justifica") or (self.elementos[i].campos.get("justifica", []) if i in self.elementos else [])
+            comunes = None
+            for j in just:
+                e = self.elementos.get(j)
+                d = self._dueno(e.clase, j, {}) if e else set()
+                comunes = d if comunes is None else comunes & d
+            return {"lider"} | (comunes or set())
         return DUENOS[clase]
 
     def _propiedad(self, clase: str, i: str, campos: dict, rol: str) -> list[str]:
@@ -608,6 +735,50 @@ class Modelo:
                      f"{limite['costo']} |")
         return "\n".join(filas)
 
+    # --- evidencia y decisiones (F2) ---
+
+    def nueva_evidencia(self, clase: str, campos: dict, rol: str) -> str:
+        """La llaman las herramientas: una MAT entra al modelo (en la transaccion de la tarea); un CAL o una FT quedan
+        como candidatos y entran cuando un agente los cita (una llamada a la calculadora con todo el BOM no llena el
+        modelo de calculos que nadie usa). La misma evidencia repetida conserva su ID. Devuelve el ID."""
+        pref = next(p for p, c in PREFIJOS.items() if c == clase)
+        campos = {k: v for k, v in campos.items() if v not in (None, "")}
+        clave = {k: campos.get(k) for k in ("expresion", "resultado", "documento", "ubicacion", "extracto", "tabla")}
+        for j, (c, cs, _) in self._candidatas.items():
+            if c == clase and {k: cs.get(k) for k in clave} == clave:
+                return j
+        for e in self.de_clase(clase):
+            if {k: e.campos.get(k) for k in clave} == clave:
+                return e.id
+        usados = [int(i.split("-")[1]) for i in [*self.elementos, *self._candidatas] if i.startswith(pref + "-")]
+        i = f"{pref}-{max(usados, default=0) + 1:02d}"
+        if clase in ("fuente", "calculo"):
+            self._candidatas[i] = (clase, campos, rol)
+        else:
+            op = self._op("crear", clase, i, campos, rol, None)
+            self._aplicar(op)
+            self._pendientes.append(op)
+        return i
+
+    def reemplazada_por(self, d: str) -> str | None:
+        return next((x.id for x in self.de_clase("decision") if x.campos.get("reemplaza") == d), None)
+
+    def vigentes(self) -> list[Elemento]:
+        return [d for d in self.de_clase("decision") if not self.reemplazada_por(d.id)]
+
+    @staticmethod
+    def rpn(mf: Elemento) -> int | None:
+        s, o, d = (mf.campos.get(k) for k in ("s", "o", "d"))
+        return s * o * d if all(isinstance(x, int) for x in (s, o, d)) else None
+
+    @staticmethod
+    def cuantitativo(r: Elemento) -> bool:
+        """Requerimiento con meta numerica que se puede medir (no un «= 1 —» cualitativo, que se cierra con evidencia)."""
+        c = r.campos
+        if not c.get("comparador") or not isinstance(c.get("valor"), (int, float, list)):
+            return False
+        return not (c["comparador"] == "=" and c.get("unidad") == "—")
+
     # --- comprobaciones de coherencia (capa 4) ---
 
     def comprobar(self, cuales: list[str] | None = None) -> list[tuple[str, str]]:
@@ -616,7 +787,7 @@ class Modelo:
         reqs = self.de_clase("requerimiento")  # RF, RNF, R y E (las especificaciones no derivan de una necesidad: K-02)
         comps = self.de_clase("componente")
         modulos = self.de_clase("modulo")
-        todas = cuales or [f"K-{n:02d}" for n in range(1, 11)]
+        todas = cuales or [f"K-{n:02d}" for n in range(1, 17)]
         if "K-01" in todas:
             for r in reqs:
                 faltan = [c for c in ("valor", "unidad", "comparador", "verificacion") if r.campos.get(c) in (None, "")]
@@ -653,11 +824,17 @@ class Modelo:
                 elif total >= 0.9 * limite:
                     salida.append(("K-06", f"{dim} total {total:.4g} {UNIDAD_BASE[dim]} usa el {total / limite:.0%} de {req.id}"))
         if "K-06" in todas:
-            # cualquier parametro que determina un requerimiento cuantitativo se compara con el, con unidades
+            # el parametro que mide un requerimiento se compara con su meta, con unidades (los que solo contribuyen
+            # no: un tiempo parcial no cumple ni incumple el tiempo de ciclo)
+            medidos = {r for p in self.de_clase("parametro") for r in p.campos.get("mide", [])}
+            sin_medida = [r.id for r in reqs if self.cuantitativo(r) and r.id not in medidos and not r.campos.get("limita")]
+            if sin_medida:
+                salida.append(("K-06", f"con meta numérica y sin un parámetro que los mida (columna Mide), su cumplimiento "
+                                       f"no se puede calcular: {', '.join(sin_medida)}"))
             for p in self.de_clase("parametro"):
                 if isinstance(p.campos.get("valor"), list):
                     continue
-                for rid in p.campos.get("determina", []):
+                for rid in p.campos.get("mide", []):
                     r = self.elementos.get(rid)
                     res = self.cumple(p.campos.get("valor"), p.campos.get("unidad", ""), r) if r else None
                     if res is None:
@@ -682,7 +859,7 @@ class Modelo:
             # portador: un componente o modulo que lo satisface, un parametro que lo determina o, si limita un
             # total del sistema, el propio total (lo compara el codigo)
             portados = {r for e in comps + modulos for r in e.campos.get("satisface", [])}
-            portados |= {r for p in self.de_clase("parametro") for r in p.campos.get("determina", [])}
+            portados |= {r for p in self.de_clase("parametro") for r in p.campos.get("determina", []) + p.campos.get("mide", [])}
             portados |= {r.id for r in reqs if r.campos.get("limita")}
             salida += [("K-08", f"{r.id} sin componente, módulo ni parámetro que lo satisfaga o determine")
                        for r in reqs if r.id not in portados]
@@ -697,6 +874,63 @@ class Modelo:
                 n1 = sum(e.campos.get("nivel") == "N1" for e in datos)
                 if datos:
                     salida.append(("K-10", f"{d}: {n1} de {len(datos)} datos son supuestos (N1)"))
+        vigentes = self.vigentes()
+        if "K-11" in todas:
+            for d in vigentes:
+                c, falta = d.campos, []
+                alts = [a.strip() for a in c.get("alternativas", "").split(";") if a.strip()]
+                if len(alts) < 2:
+                    falta.append("menos de dos alternativas (sepáralas con «;»)")
+                elif not any(sin_tildes(c.get("elegida", "")) in sin_tildes(a) or sin_tildes(a) in sin_tildes(c.get("elegida", ""))
+                             for a in alts):
+                    falta.append("la elegida no está entre las alternativas")
+                if not c.get("criterios"):
+                    falta.append("sin criterios")
+                if not c.get("evidencia"):
+                    falta.append("sin evidencia")
+                perdida = [j for j in c.get("evidencia", []) if j not in self.elementos]
+                if perdida:
+                    falta.append(f"su evidencia {', '.join(perdida)} ya no existe")
+                if falta:
+                    salida.append(("K-11", f"{d.id} ({c.get('asunto', '')}): " + "; ".join(falta)))
+        if "K-12" in todas:
+            # elementos clave: el sistema, los modulos y los componentes propios (los parametros no: serian demasiados
+            # avisos y su valor ya se respalda con Fuente y Nivel)
+            justificados = {j for d in vigentes for j in d.campos.get("justifica", [])}
+            claves = {"sistema": [e for e in self.de_clase("sistema")], "modulo": modulos,
+                      "componente": [c for c in comps if c.campos.get("tipo") == "propio"]}
+            for es in claves.values():
+                faltan = [e.id for e in es if e.id not in justificados]
+                if faltan:
+                    salida.append(("K-12", f"sin una decisión vigente que los justifique: {', '.join(faltan)}"))
+        if "K-13" in todas:
+            for d in vigentes:
+                idos = [j for j in d.campos.get("justifica", []) if j not in self.elementos]
+                cambiados = [j for j in d.campos.get("justifica", []) if j in self.elementos and self.elementos[j].cambio > d.cambio]
+                if idos or cambiados:
+                    salida.append(("K-13", f"{d.id} ({d.campos.get('asunto', '')}) justifica " +
+                                   "; ".join(x for x in (f"{', '.join(cambiados)}, que cambió después" if cambiados else "",
+                                                         f"{', '.join(idos)}, que ya no existe" if idos else "") if x) +
+                                   ": revísala (modifícala) o reemplázala con una decisión nueva"))
+        if "K-14" in todas:
+            # el valor de un parametro que cita una fuente debe aparecer en el extracto que devolvio la herramienta
+            for p in self.de_clase("parametro"):
+                fts = [j for j in ids_en_texto(p.campos.get("fuente", "")) if j.startswith("FT-") and j in self.elementos]
+                v = p.campos.get("valor")
+                if not fts or not isinstance(v, (int, float)):
+                    continue
+                if not any(numero_en_texto(v, self.elementos[j].campos.get("extracto", "")) for j in fts):
+                    salida.append(("K-14", f"{p.id} {p.campos.get('nombre', '')} = {v:g} {p.campos.get('unidad', '')} cita "
+                                           f"{', '.join(fts)}, pero ese valor no aparece en el extracto de la fuente"))
+        if "K-15" in todas:
+            for d in vigentes:
+                ev = [self.elementos[j] for j in d.campos.get("evidencia", []) if j in self.elementos]
+                if ev and all(e.clase == "parametro" and e.campos.get("nivel") == "N1" for e in ev):
+                    salida.append(("K-15", f"{d.id} ({d.campos.get('asunto', '')}) se apoya solo en supuestos (N1): "
+                                           f"{', '.join(e.id for e in ev)}"))
+        if "K-16" in todas:
+            salida += [("K-16", f"{mf.id} ({mf.campos.get('modo', '')}) es de {mf.campos.get('elemento')}, que ya no existe")
+                       for mf in self.de_clase("modo_falla") if mf.campos.get("elemento") not in self.elementos]
         return salida
 
     def _dominio_de(self, i: str | None) -> str | None:
@@ -716,7 +950,18 @@ class Modelo:
 
     def _fila_texto(self, e: Elemento) -> str:
         partes = [f"{k}: {', '.join(map(str, v)) if isinstance(v, list) else v}" for k, v in e.campos.items() if v not in ("", None, [])]
+        if e.clase == "decision" and (por := self.reemplazada_por(e.id)):
+            partes.append(f"reemplazada por {por}")
+        if e.clase == "modo_falla" and self.rpn(e):
+            partes.append(f"RPN: {self.rpn(e)}")
         return f"- {e.id}: " + "; ".join(partes)
+
+    def resumen_evidencia(self) -> str:
+        n = {c: len(self.de_clase(c)) for c in EVIDENCIA}
+        if not any(n.values()):
+            return ""
+        return (f"Evidencia registrada por las herramientas: {n['calculo']} cálculos (CAL), {n['fuente']} fuentes citadas (FT) "
+                f"y {n['matriz']} matrices (MAT); consulta una con «elemento <ID>».")
 
     def vista(self, rol: str) -> str:
         """Lo que una tarea necesita del modelo, como texto para su descripcion."""
@@ -725,10 +970,11 @@ class Modelo:
         partes = []
         if rol in ("lider", "cliente", "integrador"):
             for clase in ("sistema", "externo", "necesidad", "requerimiento", "funcion", "modulo", "interfaz", "componente",
-                          "parametro", "ecr"):
+                          "parametro", "decision", "modo_falla", "ecr"):
                 es = self.de_clase(clase)
                 if es:
                     partes.append(f"{clase.capitalize()}:\n" + "\n".join(self._fila_texto(e) for e in es))
+            partes.append(self.resumen_evidencia())
         else:
             partes.append("Requerimientos:\n" + "\n".join(self._fila_texto(e) for e in self.de_clase("requerimiento")))
             mods = [m for m in self.de_clase("modulo") if rol in m.campos.get("dominios", []) or rol == "rams"]
@@ -742,10 +988,20 @@ class Modelo:
             propios = [c for c in self.de_clase("componente") if c.campos.get("dominio") == rol or rol == "rams"]
             partes.append(("Componentes" if rol == "rams" else "Tus componentes") + ":\n" +
                           ("\n".join(self._fila_texto(c) for c in propios) or "ninguno"))
+            # decisiones vigentes que fijan algo tuyo (o de tus modulos) y modos de falla de tus componentes
+            mios = {c.id for c in propios} | ids_mods | {p.id for p in self.de_clase("parametro")
+                                                        if p.campos.get("elemento") in {c.id for c in propios} | ids_mods}
+            ds = [d for d in self.vigentes() if rol == "rams" or set(d.campos.get("justifica", [])) & mios]
+            if ds:
+                partes.append("Decisiones vigentes que te tocan:\n" + "\n".join(self._fila_texto(d) for d in ds))
+            mfs = [f for f in self.de_clase("modo_falla") if rol == "rams" or f.campos.get("elemento") in mios]
+            if mfs:
+                partes.append("Modos de falla de tus elementos:\n" + "\n".join(self._fila_texto(f) for f in mfs))
+            partes.append(self.resumen_evidencia())
         partes.append("Totales calculados por el código:\n" + self.totales_texto())
         if rol in ("cliente", "integrador"):
             avisos = self.comprobar()
-            partes.append("Comprobaciones automáticas (K-01 a K-10):\n" + ("\n".join(f"- {k}: {m}" for k, m in avisos) or "- sin avisos"))
+            partes.append("Comprobaciones automáticas (K-01 a K-16):\n" + ("\n".join(f"- {k}: {m}" for k, m in avisos) or "- sin avisos"))
         return "\n\n".join(p for p in partes if p)
 
     def consultar(self, consulta: str) -> str:
@@ -774,8 +1030,12 @@ class Modelo:
         if c == "ecr abiertas":
             es = [self._fila_texto(e) for e in self.de_clase("ecr") if e.campos.get("estado") in ("abierta", "no_cumple")]
             return "\n".join(es) or "No hay ECR abiertas."
+        if c == "decisiones":
+            return "\n".join(self._fila_texto(d) for d in self.vigentes()) or "No hay decisiones vigentes."
+        if c == "modos de falla":
+            return "\n".join(self._fila_texto(f) for f in self.de_clase("modo_falla")) or "No hay modos de falla."
         return ("Consulta no reconocida. Usa: elemento <ID>, trazabilidad <ID>, componentes <dominio>, presupuestos, "
-                "requerimientos sin portador, ecr abiertas.")
+                "requerimientos sin portador, ecr abiertas, decisiones, modos de falla.")
 
     # --- apoyo al ciclo de correccion ---
 
@@ -786,11 +1046,14 @@ class Modelo:
             return None
         if e.clase in ("necesidad", "requerimiento", "externo"):  # los externos salen de la caja negra (Fase 1)
             return "requerimientos"
-        if e.clase == "parametro" and e.creado_por == "rams":
+        if (e.clase == "parametro" and e.creado_por == "rams") or e.clase == "modo_falla":
             return "rams"
         if e.clase in ("componente", "parametro"):
             return self._dominio_de(i) or "sintesis"
-        return None if e.clase == "ecr" else "sintesis"  # funcion, modulo, interfaz, sistema
+        if e.clase == "decision":  # la disciplina de lo que justifica, si es una sola
+            ds = {self.disciplina_de(j) for j in e.campos.get("justifica", [])} - {None}
+            return ds.pop() if len(ds) == 1 else "sintesis"
+        return None if e.clase in ("ecr", *EVIDENCIA) else "sintesis"  # funcion, modulo, interfaz, sistema
 
     def sugerencias_triaje(self, ecrs: list[str] | None = None) -> str:
         """Para cada ECR abierta, las disciplinas duenas de los elementos que afecta (sugerencia, decide el lider)."""
@@ -835,8 +1098,8 @@ class Modelo:
         g = Graph()
         g.bind("vdi", vdi)
         g.bind("el", el)
-        relaciones = {"deriva_de", "modulo", "realiza", "satisface", "determina", "extremo_a", "extremo_b",
-                      "elemento", "afecta", "padre"}
+        relaciones = {"deriva_de", "modulo", "realiza", "satisface", "mide", "determina", "extremo_a", "extremo_b",
+                      "elemento", "afecta", "padre", "criterios", "evidencia", "justifica", "motivada_por", "reemplaza"}
         for e in self.elementos.values():
             nodo = el[e.id]
             g.add((nodo, RDF.type, vdi[e.clase.capitalize()]))
@@ -958,14 +1221,18 @@ if __name__ == "__main__":
     r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Determina |\n|---|---|---|---|---|---|\n"
                       "| DP-01 | Fuerza de retención | 20 | N | CP-02 | RF-01 |\n| DP-02 | Tiempo de ciclo | 3900 | ms | SIS | RNF-02 |", "mecanica")
     debe("DP-02" in r and "corresponde a" in r and "SIS" in r, "un parámetro del sistema es del líder", r)
-    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Determina |\n|---|---|---|---|---|---|\n"
+    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide |\n|---|---|---|---|---|---|\n"
                       "| DP-01 | Fuerza de retención | 20 | N | CP-02 | RF-01 |", "mecanica")
     mod.elementos["SIS"] = Elemento(id="SIS", clase="sistema", campos={"concepto": "vacío"})
-    mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Determina |\n|---|---|---|---|---|---|\n"
+    mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide |\n|---|---|---|---|---|---|\n"
                   "| DP-02 | Tiempo de ciclo | 3900 | ms | SIS | RNF-02 |", "lider")
     k = mod.comprobar(["K-06"])
     debe(any("DP-01" in m and "no cumple RF-01" in m for _, m in k) and any("DP-02" in m and "98%" in m for _, m in k),
-         "K-06 compara cualquier parámetro con su requerimiento, con unidades (ms frente a s)", str(k))
+         "K-06 compara el parámetro que mide un requerimiento con su meta, con unidades (ms frente a s)", str(k))
+    mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Determina |\n|---|---|---|---|---|---|\n"
+                  "| DP-03 | Tiempo de soplado | 10 | s | CP-02 | RNF-02 |", "mecanica")
+    k = mod.comprobar(["K-06"])
+    debe(not any("DP-03" in m for _, m in k), "K-06 no compara un parámetro que solo contribuye (Determina)", str(k))
     r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento |\n|---|---|---|---|---|\n"
                       "| DP-03 | Periodo de muestreo | 10 | ms | M-02 |", "electronica")
     debe(r.startswith("Aplicadas 1"), "un dominio del módulo registra parámetros del módulo", r)
@@ -1005,7 +1272,7 @@ if __name__ == "__main__":
     r = mod.registrar("requerimiento", "| ID | Requerimiento | Comparador | Valor | Unidad | Verificación | ECR |\n|---|---|---|---|---|---|---|\n"
                       "| E-09 | Tensión de control | = | 24 | V | Medición | ECR-01 |\n"
                       "| R-09 | Señal de pieza presente | = | 1 | — | Prueba | ECR-01 |", "lider")
-    mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Determina | ECR |\n|---|---|---|---|---|---|---|\n"
+    mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide | ECR |\n|---|---|---|---|---|---|---|\n"
                   "| DP-09 | Tensión | 24 | V | M-01 | E-09 | ECR-01 |", "lider")
     k = mod.comprobar(["K-01", "K-06"])
     debe(r.startswith("Aplicadas 2") and not any("DP-09" in m or "R-09" in m for _, m in k),
@@ -1040,6 +1307,89 @@ if __name__ == "__main__":
     debe(not any(k == "K-07" for k, _ in mod.comprobar(["K-07"])), "sin la válvula repetida K-07 ya no avisa")
     r = mod.registrar("componente", "| ID | Cantidad | ECR |\n|---|---|---|\n| CP-02 | 6 | ECR-01 |", "mecanica")
     debe(r.startswith("Aplicadas 1") and mod.elementos["CP-02"].campos["cantidad"] == 6, "modifica solo el campo enviado", r)
+    mod.confirmar()
+
+    # F2: evidencia que crean las herramientas, decisiones y modos de falla
+    mod.iniciar_tarea("prueba_f2_dominio")
+    cal = mod.nueva_evidencia("calculo", {"expresion": "6 * 5.7", "resultado": "34.2"}, "mecanica")
+    ft = mod.nueva_evidencia("fuente", {"documento": "Manual del robot", "ubicacion": "p. 12",
+                                        "extracto": "Carga máxima 7 kg; par admisible de la muñeca 16,2 N·m"}, "mecanica")
+    ft2 = mod.nueva_evidencia("fuente", {"documento": "Hoja de datos", "extracto": "Caudal 40 L/min"}, "mecanica")
+    otra = mod.nueva_evidencia("fuente", {"documento": "Manual del robot", "ubicacion": "p. 12",
+                                          "extracto": "Carga máxima 7 kg; par admisible de la muñeca 16,2 N·m"}, "electronica")
+    mat = mod.nueva_evidencia("matriz", {"tipo": "evaluacion", "tabla": "A: 3, 4; B: 5, 2", "resultado": "1 B; 2 A"}, "lider")
+    debe(cal == "CAL-01" and ft == "FT-01" and ft2 == "FT-02" and otra == "FT-01" and not {cal, ft} & set(mod.elementos)
+         and mat == "MAT-01" and mat in mod.elementos,
+         "CAL y FT quedan candidatos hasta que los citan (la misma fuente repetida conserva su ID); MAT entra directo")
+    r = mod.registrar("calculo", "| ID | Expresión | Resultado |\n|---|---|---|\n| CAL-05 | 1+1 | 2 |", "mecanica")
+    debe("registra el código" in r, "los agentes no registran evidencia a mano", r)
+    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide | Fuente |\n|---|---|---|---|---|---|---|\n"
+                      "| DP-05 | Fuerza de retención | 34.2 | N | CP-02 | RF-01 | CAL-01 |\n| DP-06 | Par admisible | 16.2 | N·m | CP-01 | | FT-09 |",
+                      "mecanica")
+    debe("FT-09 no existe" in r and "DP-05" not in mod.elementos, "rechaza una cita a evidencia que no existe", r)
+    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide | Fuente |\n|---|---|---|---|---|---|---|\n"
+                      "| DP-05 | Fuerza de retención | 34.2 | N | CP-02 | RF-01 | CAL-01 |\n"
+                      "| DP-06 | Par admisible | 16.2 | N·m | CP-01 | | Manual, FT-01 |\n"
+                      "| DP-07 | Carga útil | 9 | kg | CP-01 | | FT-01 |\n"
+                      "| DP-08 | Holgura | 2 | mm | CP-01 | | |", "mecanica")
+    debe(r.startswith("Aplicadas 4 filas") and "FT-01" in mod.elementos and "CAL-01" in mod.elementos
+         and "FT-02" not in mod.elementos and mod.elementos["DP-06"].campos["nivel"] == "N2",
+         "citar evidencia candidata la registra (y solo la citada)", r)
+    k = mod.comprobar(["K-14"])
+    debe(any("DP-07" in m for _, m in k) and not any("DP-06" in m for _, m in k),
+         "K-14 avisa si el valor citado no está en el extracto (16,2 sí; 9 no)", str(k))
+    k = mod.comprobar(["K-06"])
+    debe(any("RNF-02" in m and "sin un parámetro que los mida" in m for _, m in k) and not any("RF-01" in m for _, m in k),
+         "K-06 avisa de un requerimiento numérico sin parámetro que lo mida", str(k))
+    r = mod.registrar("decision", """
+| ID | Asunto | Alternativas | Criterios | Elegida | Justificación | Evidencia | Justifica |
+|---|---|---|---|---|---|---|---|
+| D-01 | Número de ventosas | 4 ventosas; 6 ventosas | RF-01; RNF-01 | 6 ventosas | Con 6 la retención supera RF-01 | CAL-01 | CP-02; DP-05 |
+| D-02 | Holgura | 2 mm; 5 mm | RF-01 | 2 mm | Menor brazo de palanca | DP-08 | DP-08 |""", "mecanica")
+    debe(r.startswith("Aplicadas 2"), "un dominio registra decisiones sobre sus elementos", r)
+    r = mod.registrar("decision", "| ID | Asunto | Alternativas | Criterios | Elegida | Justificación | Justifica |\n|---|---|---|---|---|---|---|\n"
+                      "| D-03 | Arquitectura | dos módulos | RNF-01 | dos módulos | Separa dominios | M-01; CP-02 |", "mecanica")
+    debe("corresponde a lider" in r, "una decisión sobre un módulo es del líder", r)
+    r = mod.registrar("decision", "| ID | Asunto | Alternativas | Criterios | Elegida | Justificación | Justifica |\n|---|---|---|---|---|---|---|\n"
+                      "| D-03 | Arquitectura | dos módulos | RNF-01 | dos módulos | Separa dominios | M-01; M-02 |", "lider")
+    k = mod.comprobar(["K-11", "K-12", "K-15"])
+    debe(any(x == "K-11" and "D-03" in m and "menos de dos" in m and "sin evidencia" in m for x, m in k),
+         "K-11 avisa de una decisión con una sola alternativa y sin evidencia", str(k))
+    debe(any(x == "K-15" and "D-02" in m for x, m in k), "K-15 avisa de una decisión que solo se apoya en supuestos", str(k))
+    debe(not any(x == "K-12" and ("DP-05" in m or "M-01" in m) for x, m in k),
+         "K-12 no avisa de lo que ya justifica una decisión vigente", str(k))
+    r = mod.registrar("modo de falla", "| ID | Elemento | Modo | Efecto | S | O | D |\n|---|---|---|---|---|---|---|\n"
+                      "| MF-01 | CP-04 | Bobina abierta | Se suelta la lámina | 9 | 2 | 4 |", "mecanica")
+    debe("corresponde a rams" in r, "los modos de falla son de RAMS", r)
+    r = mod.registrar("modos de falla", "| ID | Elemento | Modo | Efecto | S | O | D | Acción recomendada |\n|---|---|---|---|---|---|---|---|\n"
+                      "| MF-01 | CP-04 | Bobina abierta | Se suelta la lámina | 9 | 2 | 4 | Válvula normalmente cerrada |\n"
+                      "| MF-02 | CP-02 | Labio desgastado | Fuga de vacío | 6 | 11 | 3 | |", "rams")
+    debe("de 1 a 10" in r, "S, O y D van de 1 a 10", r)
+    r = mod.registrar("modos de falla", "| ID | Elemento | Modo | Efecto | S | O | D | Acción recomendada |\n|---|---|---|---|---|---|---|---|\n"
+                      "| MF-01 | CP-04 | Bobina abierta | Se suelta la lámina | 9 | 2 | 4 | Válvula normalmente cerrada |", "rams")
+    debe(r.startswith("Aplicadas 1") and Modelo.rpn(mod.elementos["MF-01"]) == 72 and "RPN: 72" in mod.consultar("modos de falla"),
+         "registra un modo de falla y calcula el RPN", r)
+    mod.confirmar()
+    mod.iniciar_tarea("prueba_f2_correccion", iteracion=2)
+    r = mod.registrar("componente", "| ID | Nombre | Cantidad | Satisface | ECR |\n|---|---|---|---|---|\n"
+                      "| CP-02 | Ventosa | 8 | RF-01 | ECR-01 |", "mecanica")
+    mod.registrar("parametro", "| ID | Fuente | ECR |\n|---|---|---|\n| DP-08 | Medición en plano | ECR-01 |", "mecanica")
+    k = mod.comprobar(["K-13"])
+    debe(any("D-01" in m and "CP-02, que cambió después" in m for _, m in k) and not any("D-02" in m for _, m in k),
+         "K-13 avisa de una decisión cuyo elemento cambió (un cambio de fuente no cuenta)", str(k))
+    r = mod.registrar("decision", "| ID | Asunto | Alternativas | Criterios | Elegida | Justificación | Evidencia | Justifica | Reemplaza | ECR |\n"
+                      "|---|---|---|---|---|---|---|---|---|---|\n| D-04 | Número de ventosas | 6 ventosas; 8 ventosas | RF-01 | 8 ventosas | "
+                      "La ECR-01 pide más margen | CAL-01 | CP-02; DP-05 | D-01 | ECR-01 |", "mecanica")
+    k = mod.comprobar(["K-13"])
+    debe(r.startswith("Aplicadas 1") and mod.reemplazada_por("D-01") == "D-04" and not k
+         and mod.elementos["D-04"].campos["motivada_por"] == ["ECR-01"],
+         "una decisión nueva reemplaza a la anterior (que queda en el modelo) y toma la ECR como motivo", r + str(k))
+    r = mod.registrar("componente", "| ID | Acción | ECR |\n|---|---|---|\n| CP-04 | eliminar | ECR-01 |", "electronica")
+    k = mod.comprobar(["K-16"])
+    debe(r.startswith("Aplicadas 1") and "MF-01 citan CP-04" in r and any("MF-01" in m for _, m in k),
+         "eliminar un componente con modo de falla avisa y K-16 lo señala", r + str(k))
+    debe(mod.disciplina_de("D-04") == "mecanica" and mod.disciplina_de("MF-01") == "rams" and mod.disciplina_de("CAL-01") is None,
+         "disciplina de decisiones, modos de falla y evidencia")
     mod.confirmar()
 
     # reanudacion y exportacion

@@ -115,11 +115,30 @@ ARCHIVO_MODELO = Path(__file__).parent / "config" / "modelo.md"
 if MODELO_ACTIVO:
     METODOLOGIA += "\n\n" + ARCHIVO_MODELO.read_text(encoding="utf-8").strip()
 MARCA_MODELO = re.compile(r"\s*\[\[MODELO:(.*?)\]\]", re.S)
+# Informes generados desde el modelo (F2, ciclo.py): el agente entrega su analisis y el codigo arma el informe.
+# VDI_INFORMES_GENERADOS=0 los apaga con el modelo encendido (como F1). En tasks.yaml, [[TABLAS:...]] marca el texto
+# de E2 y F1 que se quita con informes generados y [[ANALISIS: ...]] el que solo va con ellos; sus reglas comunes
+# estan en analisis.md. Sin informes generados el texto queda identico al de E2.
+INFORMES_GENERADOS = MODELO_ACTIVO and os.environ.get("VDI_INFORMES_GENERADOS", "1").strip() != "0"
+ARCHIVO_ANALISIS = Path(__file__).parent / "config" / "analisis.md"
+if INFORMES_GENERADOS:
+    METODOLOGIA += "\n\n" + ARCHIVO_ANALISIS.read_text(encoding="utf-8").strip()
+MARCA_TABLAS = re.compile(r"\[\[TABLAS:(.*?)\]\]", re.S)
+MARCA_ANALISIS = re.compile(r"\s*\[\[ANALISIS:(.*?)\]\]", re.S)
+
+
+def por_modo(texto: str) -> str:
+    """Texto de una tarea (descripcion o expected_output) segun haya o no informes generados."""
+    if INFORMES_GENERADOS:
+        texto = re.sub(r"\s*" + MARCA_TABLAS.pattern, "", texto, flags=re.S)
+        return MARCA_ANALISIS.sub(lambda m: " " + " ".join(m.group(1).split()), texto).lstrip()
+    return MARCA_ANALISIS.sub("", MARCA_TABLAS.sub(lambda m: m.group(1), texto))
 
 
 def con_modelo(descripcion: str, vista: str = "") -> str:
     """Descripcion de una tarea con su instruccion del modelo y la vista que le toca, o sin ellas si el modelo esta
     apagado. La vista no puede traer llaves (CrewAI las interpreta)."""
+    descripcion = por_modo(descripcion)
     if not MODELO_ACTIVO:
         return MARCA_MODELO.sub("", descripcion)
     vista = vista.replace("{", "(").replace("}", ")")
@@ -179,7 +198,8 @@ class VdiCrew:
             config=cfg,
             backstory=cfg["backstory"].rstrip() + "\n\n" + METODOLOGIA,
             llm=self.llm,
-            tools=(herramientas_agente(web=BUSQUEDA_WEB_ACTIVA and nombre in AGENTES_CON_WEB) if HERRAMIENTAS_ACTIVAS else [])
+            tools=(herramientas_agente(web=BUSQUEDA_WEB_ACTIVA and nombre in AGENTES_CON_WEB, agente=nombre)
+                   if HERRAMIENTAS_ACTIVAS else [])
             + (herramientas_modelo(nombre) if MODELO_ACTIVO else []),
             max_iter=MAX_ITER_AGENTE,
             verbose=True,

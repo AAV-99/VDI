@@ -256,8 +256,8 @@ def _indice():
     return fragmentos, vectores, _BM25([f["texto"] for f in fragmentos])
 
 
-def buscar(consulta: str, limite: int = LIMITE_RESULTADOS) -> str:
-    """Fragmentos mas pertinentes (embeddings + BM25 combinados por RRF), con archivo y pagina."""
+def fragmentos_pertinentes(consulta: str, limite: int = LIMITE_RESULTADOS) -> list[dict]:
+    """Fragmentos mas pertinentes (embeddings + BM25 combinados por RRF): archivo, pagina y texto."""
     import numpy as np
 
     fragmentos, vectores, bm25 = _indice()
@@ -267,11 +267,18 @@ def buscar(consulta: str, limite: int = LIMITE_RESULTADOS) -> str:
     for puntaje in (densa, lexica):
         rangos = np.argsort(np.argsort(-puntaje))
         rrf += 1.0 / (RRF_K + rangos + 1)
+    return [fragmentos[i] for i in np.argsort(-rrf)[:limite]]
+
+
+def buscar(consulta: str, limite: int = LIMITE_RESULTADOS, rol: str | None = None) -> str:
+    """Fragmentos como texto para el agente, con archivo y pagina; con el modelo encendido (y un rol), cada uno
+    con su ID de fuente FT-xx para citarlo."""
     salida = []
-    for i in np.argsort(-rrf)[:limite]:
-        f = fragmentos[i]
+    for f in fragmentos_pertinentes(consulta, limite):
         donde = f"{f['archivo']}, página {f['pagina']} del PDF" if f["pagina"] else f["archivo"]
-        salida.append(f"[Fuente: {donde}]\n{f['texto']}")
+        i = _evidencia("fuente", {"documento": f["archivo"], "ubicacion": f"página {f['pagina']} del PDF" if f["pagina"] else "",
+                                  "consulta": consulta, "extracto": f["texto"]}, rol) if rol is not None else None
+        salida.append(f"[Fuente{' ' + i if i else ''}: {donde}]\n{f['texto']}")
     return "\n\n".join(salida) or "No se encontró contenido en los manuales para esa consulta."
 
 
@@ -291,14 +298,17 @@ class BuscarManuales(BaseTool):
     )
     args_schema: type[BaseModel] = _EntradaRag
     max_usage_count: int | None = MAX_CONSULTAS_RAG
+    rol: str = ""
 
     def _run(self, query: str) -> str:
         try:
-            resultado = buscar(query)
+            resultado = buscar(query, rol=self.rol)
         except Exception as error:  # una consulta fallida no debe tumbar la tarea
             resultado = f"Error al consultar los manuales: {type(error).__name__}: {error}"
         # Todas las fuentes devueltas (archivo|pagina), para verificar despues las citas de los informes
-        fuentes = ";".join(f"{a}|{p}" for a, p in re.findall(r"\[Fuente: (.+?), página (\d+) del PDF\]", resultado))
+        fuentes = ";".join(f"{a}|{p}" for a, p in re.findall(r"\[Fuente(?: FT-\d+)?: (.+?), página (\d+) del PDF\]", resultado))
+        if "[Fuente FT-" in resultado:
+            resultado += "\n\n" + AVISO_CITA
         _registrar(self.name, query, resultado, fuentes or "-")
         return resultado
 
@@ -342,9 +352,10 @@ def _evaluar(nodo: ast.AST, variables: dict[str, float]) -> float:
     raise ValueError(f"expresión no permitida: {ast.dump(nodo)[:80]}")
 
 
-def calcular(expresiones: str) -> str:
+def calcular(expresiones: str, rol: str | None = None) -> str:
     """Evalua una o varias lineas (separadas por salto de linea o ';'). Cada linea es una expresion
-    o una asignacion 'nombre = expresion' que se puede usar en las lineas siguientes."""
+    o una asignacion 'nombre = expresion' que se puede usar en las lineas siguientes. Con el modelo encendido (y
+    un rol), cada linea lleva su ID de calculo CAL-xx; la evidencia guarda tambien los valores de las variables."""
     variables: dict[str, float] = {}
     salida = []
     for linea in [x.strip() for x in expresiones.replace(";", "\n").split("\n") if x.strip()]:
@@ -355,18 +366,26 @@ def calcular(expresiones: str) -> str:
                 return f"Error en '{linea}': el nombre de la variable no es válido"
             nombre = izquierda
         try:
-            valor = _evaluar(ast.parse(expresion, mode="eval"), variables)
+            arbol = ast.parse(expresion, mode="eval")
+            valor = _evaluar(arbol, variables)
         except ZeroDivisionError:
             return f"Error en '{linea}': división por cero"
         except (SyntaxError, ValueError, TypeError, OverflowError) as error:
             return f"Error en '{linea}': {error}"
         valor = float(valor)
         texto = f"{valor:.6g}"
+        usadas = sorted({n.id for n in ast.walk(arbol) if isinstance(n, ast.Name) and n.id in variables})
         if nombre:
             variables[nombre] = valor
-            salida.append(f"{nombre} = {expresion} = {texto}")
+            texto_linea = f"{nombre} = {expresion} = {texto}"
         else:
-            salida.append(f"{expresion} = {texto}")
+            texto_linea = f"{expresion} = {texto}"
+        if rol is not None:
+            contexto = f" (con {', '.join(f'{v} = {variables[v]:.6g}' for v in usadas)})" if usadas else ""
+            i = _evidencia("calculo", {"expresion": f"{nombre + ' = ' if nombre else ''}{expresion}{contexto}",
+                                       "resultado": texto}, rol)
+            texto_linea = f"{i}: {texto_linea}" if i else texto_linea
+        salida.append(texto_linea)
     return "\n".join(salida) or "Error: no se recibió ninguna expresión"
 
 
@@ -391,17 +410,21 @@ class Calculadora(BaseTool):
     )
     args_schema: type[BaseModel] = _EntradaCalculadora
     max_usage_count: int | None = MAX_USOS_CALCULADORA
+    rol: str = ""
 
     def _run(self, expresiones: str) -> str:
-        resultado = calcular(expresiones)
+        resultado = calcular(expresiones, rol=self.rol)
+        if re.match(r"CAL-\d+: ", resultado):
+            resultado += "\n\n" + AVISO_CITA
         _registrar(self.name, expresiones, resultado)
         return resultado
 
 
 # --- BUSQUEDA WEB ------------------------------------------------------------------------------
 
-def buscar_web(consulta: str) -> tuple[str, list[dict]]:
-    """Resultados de Tavily como texto para el agente, y cada resultado (url, titulo, extracto) tal como lo recibe."""
+def buscar_web(consulta: str, rol: str | None = None) -> tuple[str, list[dict]]:
+    """Resultados de Tavily como texto para el agente, y cada resultado (url, titulo, extracto) tal como lo recibe.
+    Con el modelo encendido (y un rol), cada resultado lleva su ID de fuente FT-xx."""
     cuerpo = json.dumps({"query": consulta, "search_depth": "advanced", "chunks_per_source": FRAGMENTOS_POR_PAGINA,
                          "max_results": RESULTADOS_WEB, "include_answer": False, "include_raw_content": False}).encode()
     req = urllib.request.Request(TAVILY_URL, data=cuerpo, headers={
@@ -414,7 +437,9 @@ def buscar_web(consulta: str) -> tuple[str, list[dict]]:
         url, titulo = res.get("url", ""), res.get("title", "").strip()
         extracto = " ".join(str(res.get("content", "")).split())[:CHARS_POR_RESULTADO_WEB]
         recibidos.append({"url": url, "titulo": titulo, "extracto": extracto})
-        salida.append(f"[Fuente web {i}: {titulo} | {url} | consultada el {hoy}]\n{extracto}")
+        ft = _evidencia("fuente", {"documento": url, "titulo": titulo, "ubicacion": f"consultada el {hoy}",
+                                   "consulta": consulta, "extracto": extracto}, rol) if rol is not None else None
+        salida.append(f"[Fuente web {ft or i}: {titulo} | {url} | consultada el {hoy}]\n{extracto}")
     return "\n\n".join(salida) or "La búsqueda no devolvió resultados.", recibidos
 
 
@@ -445,11 +470,14 @@ class BuscarWeb(BaseTool):
     )
     args_schema: type[BaseModel] = _EntradaWeb
     max_usage_count: int | None = MAX_BUSQUEDAS_WEB
+    rol: str = ""
 
     def _run(self, query: str) -> str:
         recibidos: list[dict] = []
         try:
-            resultado, recibidos = buscar_web(query)
+            resultado, recibidos = buscar_web(query, rol=self.rol)
+            if "[Fuente web FT-" in resultado:
+                resultado += "\n\n" + AVISO_CITA
             error = ""
         except Exception as e:  # una busqueda fallida no debe tumbar la tarea
             resultado = error = f"Error en la búsqueda web: {type(e).__name__}: {e}"
@@ -531,9 +559,15 @@ class MatrizPonderada(BaseTool):
     )
     args_schema: type[BaseModel] = _EntradaMatriz
     max_usage_count: int | None = MAX_USOS_MATRIZ
+    rol: str = ""
 
     def _run(self, tipo: str, columnas: str, filas: str, pesos: str) -> str:
         resultado = matriz_ponderada(tipo, columnas, filas, pesos)
+        if not resultado.startswith("Error"):
+            i = _evidencia("matriz", {"tipo": tipo.strip().lower(), "tabla": f"columnas: {columnas}\nfilas: {filas}\npesos: {pesos}",
+                                      "resultado": resultado}, self.rol)
+            if i:
+                resultado = f"Matriz registrada como {i}: cítala en la Evidencia de la decisión que respalda.\n{resultado}"
         _registrar(self.name, f"{tipo} | {columnas} | {pesos}", resultado)
         return resultado
 
@@ -554,9 +588,25 @@ def usar_modelo(modelo) -> None:
     _modelo["actual"] = modelo
 
 
+# F2: la calculadora, los manuales, la web y la matriz registran su evidencia (CAL, FT, MAT) y muestran el ID; con
+# el modelo apagado su salida es la misma de siempre
+AVISO_CITA = ("Para usar un dato de este resultado, cita su ID (CAL-xx, FT-xx) en la columna Fuente del parámetro o "
+              "en la Evidencia de la decisión; el código comprueba que el valor esté en la fuente citada.")
+
+
+def _evidencia(clase: str, campos: dict, rol: str | None) -> str | None:
+    modelo = _modelo["actual"]
+    if modelo is None or rol is None:
+        return None
+    try:
+        return modelo.nueva_evidencia(clase, campos, rol or "-")
+    except Exception:  # un fallo del modelo no debe tumbar la herramienta
+        return None
+
+
 class _EntradaRegistro(BaseModel):
     clase: str = Field(..., description="Clase de los elementos de la tabla: necesidad, requerimiento, funcion, modulo, "
-                                        "componente, parametro, interfaz, ecr o sistema.")
+                                        "componente, parametro, interfaz, ecr, sistema, externo, decision o modo de falla.")
     tabla: str = Field(..., description="Tabla Markdown con encabezado: la columna ID y las columnas de esa clase "
                                         "descritas en las reglas del modelo de diseño. Una fila por elemento.")
 
@@ -589,7 +639,8 @@ class RegistrarEnModelo(BaseTool):
 
 class _EntradaConsultaModelo(BaseModel):
     consulta: str = Field(..., description="Una de: 'elemento <ID>', 'trazabilidad <ID>', 'componentes <dominio>', "
-                                           "'presupuestos', 'requerimientos sin portador', 'ecr abiertas'.")
+                                           "'presupuestos', 'requerimientos sin portador', 'ecr abiertas', 'decisiones', "
+                                           "'modos de falla'.")
 
 
 class ConsultarModelo(BaseTool):
@@ -597,7 +648,9 @@ class ConsultarModelo(BaseTool):
     description: str = (
         "Consulta el modelo de diseño compartido: un elemento por su ID, su trazabilidad (de qué deriva y qué lo "
         "usa), los componentes de un dominio, los totales de masa y costo por módulo frente a su presupuesto "
-        "(calculados por el código), los requerimientos sin portador o las ECR abiertas."
+        "(calculados por el código), los requerimientos sin portador, las ECR abiertas, las decisiones vigentes o "
+        "los modos de falla. Con 'elemento <ID>' también lees un cálculo (CAL-xx), una fuente (FT-xx) o una matriz "
+        "(MAT-xx) citados."
     )
     args_schema: type[BaseModel] = _EntradaConsultaModelo
     max_usage_count: int | None = MAX_CONSULTAS_MODELO
@@ -614,9 +667,11 @@ def herramientas_modelo(agente: str) -> list[BaseTool]:
     return [RegistrarEnModelo(rol=ROL_AGENTE[agente]), ConsultarModelo()] if agente in ROL_AGENTE else []
 
 
-def herramientas_agente(web: bool = False) -> list[BaseTool]:
-    """Instancias nuevas para cada agente: cada una lleva su propio contador de usos por tarea."""
-    return [BuscarManuales(), Calculadora(), MatrizPonderada()] + ([BuscarWeb()] if web else [])
+def herramientas_agente(web: bool = False, agente: str | None = None) -> list[BaseTool]:
+    """Instancias nuevas para cada agente: cada una lleva su propio contador de usos por tarea y el rol del agente
+    (quien produjo la evidencia, en F2)."""
+    rol = ROL_AGENTE.get(agente or "", "")
+    return [BuscarManuales(rol=rol), Calculadora(rol=rol), MatrizPonderada(rol=rol)] + ([BuscarWeb(rol=rol)] if web else [])
 
 
 if __name__ == "__main__":

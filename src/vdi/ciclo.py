@@ -27,6 +27,14 @@ Modelo de diseno compartido (F1, src/vdi/modelo.py; VDI_MODELO=0 lo apaga): cada
 toca. El codigo registra en el modelo la disciplina y el tipo del triaje y los estados de la verificacion, sugiere
 al triaje la disciplina duena de lo que afecta cada ECR y calcula el impacto de cada correccion para compararlo con
 el declarado. Al reanudar, el modelo se reconstruye con las operaciones de las tareas cuyo informe existe.
+
+Informes generados desde el modelo (F2; con el modelo encendido, VDI_INFORMES_GENERADOS=0 los apaga): el agente
+escribe su analisis en _analisis/ y, al confirmarse la transaccion, el codigo escribe el informe de la tarea en
+RUN_DIR (analisis + datos del modelo, informes.py); ese informe es el contexto de las tareas siguientes. Las tablas
+que lee el codigo (triaje, cambios, verificacion) se leen del analisis. El integrador escribe solo el resumen, sus
+decisiones de integracion y los cambios recomendados; el dossier y historial_de_diseno.md los genera el codigo.
+Al final, el lider escribe la prosa del informe para el ingeniero y el codigo le agrega graficos y tablas
+(00_informe_ingeniero.html, informe_final.py; VDI_INFORME_FINAL=0 lo apaga).
 """
 import csv
 import json
@@ -41,9 +49,10 @@ from crewai.tasks.task_output import TaskOutput
 
 from .corrida import RUN_DIR, registrar_evento
 from .crews.vdicrew.herramientas import ROL_AGENTE, usar_modelo
-from .crews.vdicrew.vdicrew import (MARCA_FIN, MAX_REINTENTOS_INCOMPLETO, MODELO_ACTIVO, VdiCrew, con_modelo,
-                                    guardrail_informe_completo)
+from .crews.vdicrew.vdicrew import (INFORMES_GENERADOS, MARCA_FIN, MAX_REINTENTOS_INCOMPLETO, MODELO_ACTIVO, VdiCrew,
+                                    con_modelo, guardrail_informe_completo, por_modo)
 from .crews.vdicrew.vdicrew import _registrar as _registrar_guardrail
+from . import informe_final, informes
 from .modelo import Modelo
 
 MAX_CICLOS = int(os.environ.get("VDI_CICLOS", "4"))  # 0 = sin ciclo de correccion (flujo de las etapas anteriores)
@@ -52,6 +61,10 @@ MAX_INTENTOS_TAREA = 2  # intentos de una tarea del ciclo antes de darla por fal
 HISTORIAL = RUN_DIR / "_iteraciones.json"
 PASO_ACTUAL = {"tarea": "-"}  # ultima tarea lanzada, para registrar donde fallo una corrida
 MODELO = {"m": None}  # modelo de diseno de la corrida (None si VDI_MODELO=0)
+# F2: informes generados desde el modelo (el agente escribe su analisis en _analisis/) e informe para el ingeniero
+INFORME_FINAL = INFORMES_GENERADOS and os.environ.get("VDI_INFORME_FINAL", "1").strip() != "0"
+ANALISIS = RUN_DIR / "_analisis"
+HISTORIAL_MD = RUN_DIR / "historial_de_diseno.md"
 
 # Disciplina -> (agente, informe base, tarea de la pasada inicial). El orden es el de correccion: los informes
 # del lider van primero porque sus cambios (requerimientos, QFD, evaluacion de conceptos) bajan a los dominios.
@@ -89,6 +102,31 @@ def ultima_version(base: str) -> tuple[int, Path]:
 
 def _leer(ruta: Path) -> str:
     return ruta.read_text(encoding="utf-8")
+
+
+def _salida(ruta: Path) -> str:
+    """Archivo que escribe el agente: el informe mismo o, con informes generados, su analisis en _analisis/."""
+    if not INFORMES_GENERADOS:
+        return str(ruta)
+    ANALISIS.mkdir(parents=True, exist_ok=True)
+    return str(ANALISIS / ruta.name)
+
+
+def _agente_txt(ruta: Path) -> str:
+    """Texto que escribio el agente para ese informe (de el salen las tablas que lee el codigo)."""
+    analisis = ANALISIS / ruta.name
+    return _leer(analisis) if INFORMES_GENERADOS and analisis.exists() else _leer(ruta)
+
+
+def _generar_informe(base: str) -> None:
+    """Informe de la tarea desde su analisis y el modelo confirmado; si falla la generacion, queda el analisis."""
+    analisis = _leer(ANALISIS / f"{base}.md").replace(MARCA_FIN, "").strip()
+    try:
+        texto = informes.informe(RUN_DIR, base, analisis)
+    except Exception as error:  # queda en _guardrail.log; la corrida sigue con el texto del agente
+        _registrar_guardrail(base, "INFORME_NO_GENERADO", f"{type(error).__name__}: {error}", "")
+        texto = analisis + "\n"
+    (RUN_DIR / f"{base}.md").write_text(texto, encoding="utf-8")
 
 
 def _sin_tildes(texto: str) -> str:
@@ -184,7 +222,7 @@ def estados_cliente() -> dict[str, str]:
     """Estado de cada ECR en la ultima verificacion del cliente en que aparece (versiones 2 en adelante)."""
     estados = {}
     for v in range(2, ultima_version(CLIENTE)[0] + 1):
-        estados.update(leer_verificacion(_leer(_archivo(CLIENTE, v))))
+        estados.update(leer_verificacion(_agente_txt(_archivo(CLIENTE, v))))
     return estados
 
 
@@ -271,8 +309,8 @@ def _tarea(vc: VdiCrew, clave: str, agente, salida: Path, contexto: list, reempl
         desc = desc.replace(f"[[{marca}]]", _sin_llaves(str(valor)))
     desc = con_modelo(desc, vista)
     nombre = f"{clave}:{salida.stem}"
-    return Task(description=desc, expected_output=cfg["expected_output"], agent=agente, context=contexto,
-                output_file=str(salida), name=clave,
+    return Task(description=desc, expected_output=por_modo(cfg["expected_output"]), agent=agente, context=contexto,
+                output_file=_salida(salida), name=clave,
                 guardrail=_guardrail(nombre, validar) if validar else guardrail_informe_completo(nombre),
                 guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
 
@@ -299,6 +337,8 @@ def _correr(vc: VdiCrew, tarea: Task, inputs: dict, iteracion: int = 0, despues=
         if despues:
             despues(m)
         m.confirmar()
+        if INFORMES_GENERADOS:
+            _generar_informe(Path(tarea.output_file).stem)
 
 
 def _intentar(crear_tarea, vc: VdiCrew, inputs: dict, iteracion: int = 0, despues=None) -> str | None:
@@ -371,8 +411,8 @@ def pasada_inicial(vc: VdiCrew, inputs: dict) -> None:
         if not ruta.exists():
             cfg = vc.tasks_config[clave]
             tarea = Task(description=con_modelo(cfg["description"], _vista(ROL_AGENTE[nombre])),
-                         expected_output=cfg["expected_output"], agent=agente, context=list(hechas),
-                         output_file=str(ruta), name=clave, guardrail=guardrail_informe_completo(clave),
+                         expected_output=por_modo(cfg["expected_output"]), agent=agente, context=list(hechas),
+                         output_file=_salida(ruta), name=clave, guardrail=guardrail_informe_completo(clave),
                          guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
             _correr(vc, tarea, inputs)
         hechas.append(_previa(base, _leer(ruta), agente))
@@ -402,7 +442,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         anterior = "; ".join(f"{f['ecr']}: {f['disciplina']} ({f['tipo']})" for f in previa.get("triaje", [])) \
             or "ninguna (primera iteración)"
         def registrar_triaje(m):  # disciplina y tipo de cada ECR, desde la tabla del lider
-            filas = [f for f in leer_triaje(_leer(ruta_triaje)) if f["tipo"] != "cumple"]
+            filas = [f for f in leer_triaje(_agente_txt(ruta_triaje)) if f["tipo"] != "cumple"]
             registro["ecr_fuera_del_modelo"] = sorted({f["ecr"] for f in filas if f["ecr"] not in m.elementos})
             _registrar_codigo(m, ["Disciplina", "Tipo"], [[f["ecr"], f["disciplina"], f["tipo"]] for f in filas
                                                           if f["ecr"] in m.elementos], "lider", registro)
@@ -420,7 +460,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
             h["fin"] = f"triaje fallido en la iteración {k}"
             _guardar_historial(h)
             return False
-    triaje = leer_triaje(_leer(ruta_triaje))
+    triaje = leer_triaje(_agente_txt(ruta_triaje))
     registro["triaje"] = triaje
     asignadas = {d: [f for f in triaje if f["disciplina"] == d and f["tipo"] == "corregible" and f["ecr"] not in h["escaladas"]]
                  for d in ORDEN}
@@ -464,7 +504,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
                 _guardar_historial(h)
         if d in fallidas_correccion:
             continue
-        cambios = seccion_cambios(_leer(ruta_nueva), k)
+        cambios = seccion_cambios(_agente_txt(ruta_nueva), k)
         cambios_previos.append(f"Disciplina {d}:\n{cambios}")
         ejecutadas.append({"disciplina": d, "ecr": [f["ecr"] for f in ecrs], "revision_impacto": bool(motivos),
                            "informe": ruta_nueva.name, "impacto_declarado": sorted(impactos(cambios) - {d}),
@@ -485,7 +525,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         ctx = [_previa(ruta_cliente.stem, _leer(ruta_cliente), cliente)] + [
             _previa(e["informe"], _leer(RUN_DIR / e["informe"]), cliente) for e in ejecutadas]
         def registrar_estados(m):  # estado de cada ECR, desde la tabla de verificacion del cliente
-            estados_v = leer_verificacion(_leer(ruta_verif))
+            estados_v = leer_verificacion(_agente_txt(ruta_verif))
             registro["ecr_fuera_del_modelo_verificacion"] = sorted(e for e in estados_v if e not in m.elementos)
             _registrar_codigo(m, ["Estado"], [[e, est] for e, est in sorted(estados_v.items()) if e in m.elementos],
                               "cliente", registro)
@@ -501,7 +541,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
             h["fin"] = f"verificación fallida en la iteración {k}"
             _guardar_historial(h)
             return False
-    estados = leer_verificacion(_leer(ruta_verif)) if ruta_verif.exists() else {}
+    estados = leer_verificacion(_agente_txt(ruta_verif)) if ruta_verif.exists() else {}
     registro["verificacion"] = estados
     registro["cerradas"] = [e for e in atendidas if estados.get(e) in ("cumple", "pendiente")]
     registro["fallidas"] = [e for e in atendidas if estados.get(e) == "no_cumple"] + no_corregidas
@@ -552,22 +592,30 @@ def integrador(vc: VdiCrew, inputs: dict, h: dict):
     lider = vc.team_lead()
     hubo_ciclo = any(it.get("resultado") == "completada" for it in h["iteraciones"])
     cliente = estados_cliente() if hubo_ciclo else {}
-    if not ruta.exists():
+    analisis = ANALISIS / ruta.name
+    if not ruta.exists() and not (INFORMES_GENERADOS and analisis.exists()):
         bases = INICIALES if not hubo_ciclo else INICIALES[:-1]
         ctx = _contexto_actual(vc, bases)
         base = vc.design_board_integration_task()
         # la misma tarea con la vista del modelo (o sin la marca, si el modelo esta apagado)
         tarea = Task(description=con_modelo(vc.tasks_config["design_board_integration_task"]["description"],
                                             _vista("integrador")),
-                     expected_output=base.expected_output, agent=base.agent, output_file=base.output_file,
+                     expected_output=por_modo(vc.tasks_config["design_board_integration_task"]["expected_output"]),
+                     agent=base.agent, output_file=_salida(ruta),
                      name="design_board_integration_task", guardrail=base.guardrail,
                      guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
         if hubo_ciclo:  # el informe original del cliente (matriz de conformidad) y su ultima verificacion
             ctx += [_previa(CLIENTE, _leer(_archivo(CLIENTE)), lider),
                     _previa(ultima_version(CLIENTE)[1].stem, _leer(ultima_version(CLIENTE)[1]), lider),
                     _previa("historial", _resumen_historial(h), lider)]
-            # mismo encargo, con un guardrail que exige respetar el Cumple del cliente en la tabla de cierre
+        # con informes generados, el integrador escribe solo el resumen, sus decisiones y los cambios recomendados
+        # (la tabla de cierre la genera el codigo); sin ellos, con ciclo, se le exige respetar el Cumple del cliente
+        validar = None
+        if INFORMES_GENERADOS:
+            validar = lambda t: None if informes.seccion(t, "resumen") else "falta la sección '## Resumen ejecutivo'"  # noqa: E731
+        elif hubo_ciclo:
             validar = lambda t: "; ".join(discrepancias_cierre(t, cliente)) or None  # noqa: E731
+        if validar:
             tarea = Task(description=tarea.description, expected_output=tarea.expected_output, agent=tarea.agent,
                          output_file=tarea.output_file, name="design_board_integration_task",
                          guardrail=_guardrail("design_board_integration_task", validar),
@@ -581,10 +629,66 @@ def integrador(vc: VdiCrew, inputs: dict, h: dict):
         finally:
             if m:
                 m.descartar()
+    if INFORMES_GENERADOS:  # dossier e historial generados desde el modelo final
+        if not ruta.exists():
+            texto = _leer(analisis).replace(MARCA_FIN, "")
+            textos = {"resumen": informes.seccion(texto, "resumen"),
+                      "decisiones": informes.seccion(texto, "decisiones de integraci"),
+                      "recomendados": informes.seccion(texto, "cambios recomendados")}
+            ruta.write_text(informes.dossier(RUN_DIR, textos), encoding="utf-8")
+        HISTORIAL_MD.write_text(informes.historial(RUN_DIR, h), encoding="utf-8")
     if hubo_ciclo:  # lo que quede sin respetar tras los reintentos, para el analisis
         h["discrepancias_cierre"] = discrepancias_cierre(_leer(ruta), cliente)
         _guardar_historial(h)
     return TaskOutput(description="dossier", raw=_leer(ruta), agent=lider.role)
+
+
+def informe_ingeniero(vc: VdiCrew, inputs: dict, h: dict) -> None:
+    """Informe para el ingeniero: prosa del lider (engineer_report_task) con el dossier y el historial como contexto,
+    mas los graficos y tablas que agrega el codigo (informe_final.py). Un guardrail exige las siete secciones y que
+    toda cifra este en el dossier o el historial. Si la tarea falla, el HTML sale sin la prosa: no tumba la corrida."""
+    html = RUN_DIR / informe_final.ARCHIVO_HTML
+    if html.exists():
+        return
+    prosa = ANALISIS / informe_final.ARCHIVO_PROSA
+    referencia = _leer(_archivo(DOSSIER)) + "\n" + _leer(HISTORIAL_MD)
+    registro = h.setdefault("informe_ingeniero", {})
+    if not prosa.exists():
+        lider = vc.team_lead()
+
+        def validar(texto):
+            problemas = []
+            faltan = informe_final.faltan_secciones(texto)
+            if faltan:
+                problemas.append("faltan las secciones " + ", ".join(f"'## {s}'" for s in faltan))
+            cifras = informe_final.cifras_sin_respaldo(texto, referencia)
+            if cifras:
+                problemas.append("estas cifras no están en el dossier ni en el historial: " + ", ".join(cifras[:12]) +
+                                 " (usa solo cifras del dossier o del historial, redondeadas si quieres, o quítalas)")
+            return "; ".join(problemas) or None
+        cfg = vc.tasks_config["engineer_report_task"]
+        tarea = Task(description=cfg["description"], expected_output=cfg["expected_output"], agent=lider,
+                     context=[_previa(DOSSIER, _leer(_archivo(DOSSIER)), lider),
+                              _previa(HISTORIAL_MD.stem, _leer(HISTORIAL_MD), lider)],
+                     output_file=_salida(RUN_DIR / informe_final.ARCHIVO_PROSA), name="engineer_report_task",
+                     guardrail=_guardrail("engineer_report_task", validar), guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
+        m = MODELO["m"]
+        if m:  # solo consulta: lo que registre se descarta
+            m.iniciar_tarea(Path(informe_final.ARCHIVO_PROSA).stem)
+        try:
+            _ejecutar(vc, [tarea], inputs)
+        except Exception as error:  # el HTML sale con graficos y tablas, sin la prosa
+            registro["fallo"] = f"{type(error).__name__}: {' '.join(str(error).split())[:300]}"
+            _registrar_guardrail("engineer_report_task", "TAREA_FALLIDA", registro["fallo"], "")
+        finally:
+            if m:
+                m.descartar()
+    if prosa.exists():
+        texto = _leer(prosa)
+        registro["secciones_faltantes"] = informe_final.faltan_secciones(texto)
+        registro["cifras_sin_respaldo"] = informe_final.cifras_sin_respaldo(texto, referencia)
+    informe_final.escribir(RUN_DIR)
+    _guardar_historial(h)
 
 
 def ejecutar(inputs: dict):
@@ -617,4 +721,6 @@ def ejecutar(inputs: dict):
         h["comprobaciones_finales"] = [f"{k}: {msg}" for k, msg in MODELO["m"].comprobar()]
         _guardar_historial(h)
         MODELO["m"].exportar_rdf()
+    if INFORME_FINAL:
+        informe_ingeniero(VdiCrew(), inputs, h)
     return salida

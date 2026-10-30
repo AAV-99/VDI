@@ -12,12 +12,15 @@ requirements_ingestion_task:
     carga o fuerza y URL de la fuente), y cómo fija o ajusta los valores objetivo de las especificaciones. Si no tienes la herramienta
     buscar_web, declara el benchmarking como actividad pendiente.
     [[MODELO: Registra en el modelo las necesidades, los requerimientos con su Deriva de (y la columna Limita en los requerimientos que limitan la masa total y el costo total del sistema) y las funciones de la estructura funcional, con los mismos ID del informe, y los elementos externos de la caja negra (X-xx: robot, pieza, gabinete, operador) con los datos conocidos. Solo esas clases: el sistema, los módulos, las interfaces y los parámetros se registran en la síntesis (01b).]]
-    REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art.
+    [[TABLAS:REGLA DE FORMATO: Prioriza tablas Markdown y viñetas técnicas densas. Para límites o fronteras del sistema, utiliza EXCLUSIVAMENTE diagramas en sintaxis Mermaid (```mermaid). PROHIBIDO incluir esquemas o cajas en ASCII Art.]]
+    [[ANALISIS: REGLA DE FORMATO: Explica cada punto del contenido obligatorio en prosa técnica breve con los ID del modelo: las necesidades, los requerimientos, las funciones y los elementos externos salen en las tablas que el código genera. Escribe como tabla solo la matriz de necesidades, la matriz QFD etapa 1 y el benchmarking. La caja negra y la estructura funcional van en diagramas Mermaid.]]
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    Un informe de Fase 1 completo en Markdown con los nueve elementos obligatorios, identificadores trazables y la matriz QFD etapa 1,
-    estructurado en capítulos técnicos sin prosa de relleno.
+    [[TABLAS:Un informe de Fase 1 completo en Markdown con los nueve elementos obligatorios, identificadores trazables y la matriz QFD etapa 1,
+    estructurado en capítulos técnicos sin prosa de relleno.]]
+    [[ANALISIS: El análisis de la Fase 1 en Markdown con los diez puntos obligatorios, los ID del modelo, la matriz de necesidades, la
+    QFD etapa 1, el benchmarking y los diagramas Mermaid, sin copiar las tablas de datos del modelo.]]
   agent: team_lead
 
 system_synthesis_task:
@@ -32,13 +35,16 @@ system_synthesis_task:
     {primary_requirements}; (6) arquitectura del producto con módulos, asignación de subfunciones a módulos y dominios, e interfaces entre
     módulos; (7) matriz QFD etapa 2 de requerimientos frente a variables de diseño; (8) matriz de diseño axiomático con su diagnóstico de
     acoplamiento; (9) presupuestos preliminares de masa, costo y tiempo de ciclo repartidos por módulo, que las disciplinas deben respetar.
-    [[MODELO: Registra en el modelo el sistema SIS con el concepto seleccionado y su principio, los módulos con sus presupuestos de masa, costo y tiempo, la columna Módulo de cada función, las interfaces entre módulos y con los elementos externos, y los parámetros de diseño del QFD etapa 2 con su Determina. En Dominios de cada módulo nombra todas las disciplinas que trabajan en él: incluye software en el módulo donde corre el control.]]
-    REGLA DE FORMATO: Usa tablas Markdown para la matriz morfológica, la evaluación, el QFD y la matriz axiomática, y diagramas Mermaid (```mermaid) para la estructura funcional y la arquitectura del producto. PROHIBIDO el uso de ASCII Art.
+    [[MODELO: Registra en el modelo el sistema SIS con el concepto seleccionado y su principio, los módulos con sus presupuestos de masa, costo y tiempo, la columna Módulo de cada función, las interfaces entre módulos y con los elementos externos, y los parámetros de diseño del QFD etapa 2 con Mide o Contribuye a. En Dominios de cada módulo nombra todas las disciplinas que trabajan en él: incluye software en el módulo donde corre el control. Registra las decisiones del sistema: una D-xx del concepto seleccionado (Alternativas: los conceptos evaluados; Criterios: los requerimientos con más peso; Evidencia: la MAT-xx de la evaluación si la tienes; Justifica: SIS) y una de la arquitectura (Justifica: los módulos).]]
+    [[TABLAS:REGLA DE FORMATO: Usa tablas Markdown para la matriz morfológica, la evaluación, el QFD y la matriz axiomática, y diagramas Mermaid (```mermaid) para la estructura funcional y la arquitectura del producto. PROHIBIDO el uso de ASCII Art.]]
+    [[ANALISIS: REGLA DE FORMATO: Escribe como tabla la matriz morfológica, las rutas factibles, la evaluación de conceptos y el QFD etapa 2. El sistema, los módulos con sus presupuestos, la asignación de funciones, las interfaces, los parámetros y la matriz de diseño axiomático los genera el código desde el modelo: explica en prosa el diagnóstico de acoplamiento y el reparto de los presupuestos. La estructura funcional y la arquitectura van en diagramas Mermaid.]]
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    Un informe de síntesis del sistema en Markdown con la matriz morfológica, al menos tres conceptos evaluados, el concepto seleccionado,
-    la arquitectura del producto con interfaces, las matrices QFD etapa 2 y de diseño axiomático, y los presupuestos por módulo.
+    [[TABLAS:Un informe de síntesis del sistema en Markdown con la matriz morfológica, al menos tres conceptos evaluados, el concepto seleccionado,
+    la arquitectura del producto con interfaces, las matrices QFD etapa 2 y de diseño axiomático, y los presupuestos por módulo.]]
+    [[ANALISIS: El análisis de la síntesis en Markdown con la matriz morfológica, al menos tres conceptos evaluados, la justificación del
+    concepto seleccionado y de la arquitectura, el QFD etapa 2 y el diagnóstico de acoplamiento, citando los ID del modelo.]]
   agent: team_lead
 
 mechanical_subsystem_design_task:
@@ -54,13 +60,16 @@ mechanical_subsystem_design_task:
     modelo comercial candidato, el valor de su hoja de datos, si cumple y la fuente (URL, o Supuesto si no la tienes o no trae el valor);
     (7) BOM Preliminar Mecánico con material o referencia, cantidad, masa y costo por línea y totales que sumen. Los costos son
     estimaciones: márcalos como Supuesto e indica el criterio (precio típico del componente, o material por masa más mecanizado).
-    [[MODELO: Registra en el modelo cada línea de tu BOM como componente, con Satisface y Realiza (el BOM del informe usa los mismos ID CP-xx); registra solo los componentes de tu dominio: los sensores, válvulas y el cableado los registra electrónica aunque los montes tú. Registra también los parámetros críticos de tu dimensionamiento con su Determina, y el protocolo o los niveles de las interfaces que te tocan. Los totales del BOM en el informe son los que devuelve consultar_modelo con presupuestos.]]
-    REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.
+    [[MODELO: Registra en el modelo cada línea de tu BOM como componente, con Satisface y Realiza (el BOM del informe usa los mismos ID CP-xx); registra solo los componentes de tu dominio: los sensores, válvulas y el cableado los registra electrónica aunque los montes tú. Registra también los parámetros críticos de tu dimensionamiento con Mide o Contribuye a, el protocolo o los niveles de las interfaces que te tocan, y una decisión D-xx por cada elección importante de tu dominio (principio o mecanismo de un componente propio, material, componente comercial crítico), con Justifica los CP-xx y DP-xx que fija. Los totales de masa y costo los calcula el código: consúltalos con presupuestos.]]
+    [[TABLAS:REGLA DE FORMATO: Representa flujos, cinemática o ensamble estructural mediante diagramas Mermaid (```mermaid). Evita descripciones narrativas largas; utiliza tablas técnicas y fórmulas explicativas directas. PROHIBIDO el uso de ASCII Art.]]
+    [[ANALISIS: REGLA DE FORMATO: Explica el dimensionamiento y la verificación con fórmulas directas, citando los CAL-xx y FT-xx. Escribe como tabla solo la selección de componentes comerciales del punto 6; el BOM, sus totales, los parámetros y las interfaces los genera el código desde el modelo. Flujos, cinemática o ensamble en diagramas Mermaid.]]
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    Un reporte técnico del dominio mecánico con el dimensionamiento de componentes críticos, la verificación de los requerimientos asignados,
-    las interfaces y la tabla BOM preliminar con masa y costo por línea.
+    [[TABLAS:Un reporte técnico del dominio mecánico con el dimensionamiento de componentes críticos, la verificación de los requerimientos asignados,
+    las interfaces y la tabla BOM preliminar con masa y costo por línea.]]
+    [[ANALISIS: El análisis del dominio mecánico en Markdown con el dimensionamiento de los componentes críticos, la verificación de los
+    requerimientos asignados, las interfaces y la selección de componentes comerciales, citando los ID del modelo y sin copiar el BOM.]]
   agent: mecanico
 
 electronic_subsystem_design_task:
@@ -77,13 +86,16 @@ electronic_subsystem_design_task:
     el modelo comercial candidato, el valor de su hoja de datos, si cumple y la fuente (URL, o Supuesto si no la tienes o no trae el valor);
     (6) BOM Preliminar Electrónico con referencia típica, cantidad, masa y costo por línea y totales que sumen. Los costos son
     estimaciones: márcalos como Supuesto e indica el criterio. No repitas en tu BOM componentes que ya estén en el BOM mecánico.
-    [[MODELO: Registra en el modelo cada línea de tu BOM como componente, con Satisface y Realiza (el BOM del informe usa los mismos ID CP-xx); registra solo los componentes de tu dominio: la estructura, los soportes y la tornillería los registra mecánica. Registra también los parámetros críticos de tu dimensionamiento con su Determina, y el protocolo o los niveles de las interfaces eléctricas y de señal. Los totales del BOM en el informe son los que devuelve consultar_modelo con presupuestos.]]
-    REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.
+    [[MODELO: Registra en el modelo cada línea de tu BOM como componente, con Satisface y Realiza (el BOM del informe usa los mismos ID CP-xx); registra solo los componentes de tu dominio: la estructura, los soportes y la tornillería los registra mecánica. Registra también los parámetros críticos de tu dimensionamiento con Mide o Contribuye a, el protocolo o los niveles de las interfaces eléctricas y de señal, y una decisión D-xx por cada elección importante de tu dominio (sensor, actuador, fuente o protocolo), con Justifica los CP-xx y DP-xx que fija. Los totales de masa y costo los calcula el código: consúltalos con presupuestos.]]
+    [[TABLAS:REGLA DE FORMATO: Todos los esquemas de bloque, arquitectura de sensores, distribución de potencia y comunicaciones DEBEN diagramarse en sintaxis Mermaid (```mermaid). No dibuches diagramas con texto plano o bordes de cajas.]]
+    [[ANALISIS: REGLA DE FORMATO: Explica el dimensionamiento, el presupuesto de potencia y la integración de interfaces con fórmulas directas, citando los CAL-xx y FT-xx. Escribe como tabla solo la selección de componentes comerciales del punto 5; el BOM, sus totales, los parámetros y las interfaces los genera el código desde el modelo. Esquemas de bloques, sensores, potencia y comunicaciones en diagramas Mermaid.]]
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    Un reporte técnico del dominio eléctrico y electrónico con diagramas de bloques en Mermaid, el presupuesto de potencia, el análisis de
-    integración de interfaces y la tabla BOM preliminar con masa y costo por línea.
+    [[TABLAS:Un reporte técnico del dominio eléctrico y electrónico con diagramas de bloques en Mermaid, el presupuesto de potencia, el análisis de
+    integración de interfaces y la tabla BOM preliminar con masa y costo por línea.]]
+    [[ANALISIS: El análisis del dominio eléctrico y electrónico en Markdown con diagramas de bloques en Mermaid, el presupuesto de potencia,
+    la integración de interfaces y la selección de componentes comerciales, citando los ID del modelo y sin copiar el BOM.]]
   agent: electronico
 
 software_subsystem_design_task:
@@ -96,8 +108,9 @@ software_subsystem_design_task:
     necesaria para {primary_requirements}; (2) máquina de estados y lógica de control con sus tiempos; (3) análisis de integración de
     las interfaces de datos y señales con los otros dominios, con protocolo, temporización y prueba de compatibilidad propuesta;
     (4) verificación de cada requerimiento asignado al dominio con su método; (5) stack de tecnologías, plataformas y herramientas.
-    [[MODELO: Registra en el modelo los parámetros de tiempos y de lógica con su Determina, con Elemento el módulo de software que les corresponde; el protocolo de las interfaces de datos, y componentes solo si tienen masa o costo.]]
+    [[MODELO: Registra en el modelo los parámetros de tiempos y de lógica con Mide o Contribuye a, con Elemento el módulo de software que les corresponde; el protocolo de las interfaces de datos, y componentes solo si tienen masa o costo. Registra una decisión D-xx por cada elección importante de tu dominio (plataforma, estrategia de control o protocolo), con Justifica los DP-xx que fija.]]
     REGLA DE FORMATO: Modulos, capas de firmware y máquinas de estado deben diagramarse mediante sintaxis Mermaid (```mermaid) o tablas de transición de estado. NO INCLUIR NINGÚN BLOQUE DE CÓDIGO NI ASCII ART.
+    [[ANALISIS: Los parámetros de tiempos y las interfaces los genera el código desde el modelo: cítalos por su ID, no los copies en tablas.]]
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
@@ -110,12 +123,15 @@ maintenance_rams_eval_task:
     {project_scope}. Definir la modularidad para reemplazo rápido de piezas y proponer la estrategia de
     diagnóstico o monitoreo de condición (PHM). Para tasas de falla y vida útil usa los datos de los fabricantes de los componentes
     seleccionados (B10d, MTTF, ciclos de vida) cuando los encuentres, citando su fuente; si no, márcalos como Supuesto.
-    [[MODELO: Registra en el modelo los parámetros de confiabilidad (MTTF, B10d o ciclos de vida) de los componentes críticos, con Elemento el CP-xx, su fuente y su nivel.]]
-    REGLA DE FORMATO: Presenta matrices de riesgo, estimaciones RAMS y estrategias PHM en tablas cuantitativas claras y diagramas de flujo en sintaxis Mermaid (```mermaid).
+    [[MODELO: Registra en el modelo los parámetros de confiabilidad (MTTF, B10d o ciclos de vida) de los componentes críticos, con Elemento el CP-xx, su fuente y su nivel, y cada modo de falla de tu FMEA como modo_falla (MF-xx) con S, O y D de 1 a 10 y la acción recomendada: el RPN lo calcula el código.]]
+    [[TABLAS:REGLA DE FORMATO: Presenta matrices de riesgo, estimaciones RAMS y estrategias PHM en tablas cuantitativas claras y diagramas de flujo en sintaxis Mermaid (```mermaid).]]
+    [[ANALISIS: REGLA DE FORMATO: Explica las estimaciones RAMS con sus fórmulas, citando los CAL-xx y FT-xx. La matriz FMEA y los parámetros de confiabilidad los genera el código desde el modelo; escribe como tabla solo la estrategia PHM y el plan de mantenimiento. Flujos de diagnóstico en diagramas Mermaid.]]
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    Un reporte RAMS completo con métricas estimadas, matriz FMEA/RAMS y la arquitectura para mantenimiento y monitoreo condicional.
+    [[TABLAS:Un reporte RAMS completo con métricas estimadas, matriz FMEA/RAMS y la arquitectura para mantenimiento y monitoreo condicional.]]
+    [[ANALISIS: El análisis RAMS en Markdown con las métricas estimadas, los modos de falla registrados y la arquitectura para mantenimiento
+    y monitoreo condicional, citando los ID del modelo.]]
   agent: mantenimiento
 
 client_acceptance_review_task:
@@ -137,7 +153,7 @@ client_acceptance_review_task:
 
 design_board_integration_task:
   description: >
-    Sintetizar y consolidar las entregas de todas las disciplinas en el Dossier de Diseño Conceptual VDI 2206
+    [[TABLAS:Sintetizar y consolidar las entregas de todas las disciplinas en el Dossier de Diseño Conceptual VDI 2206
     final para {system_type}. Resolver los conflictos entre dominios, registrar el estado de cada solicitud de cambio (ECR) del cliente,
     articular la integración VDI 2206 y calcular la puntuación ponderada global del diseño, además de verificar el cumplimiento del presupuesto {target_cost}.
     REGLA DE INTEGRACIÓN: Corrige los errores e inconsistencias que encuentres y toma las decisiones de diseño necesarias para entregar un
@@ -166,14 +182,28 @@ design_board_integration_task:
     en una tabla de cambios recomendados con las columnas parámetro, valor actual, valor recomendado, motivo y cálculo, como tarea
     pendiente para el diseñador.
     TRAZABILIDAD DEL CONCEPTO: Resume la cadena necesidades, requerimientos, matriz morfológica, ruta factible, evaluación y concepto
-    seleccionado, y actualiza la matriz de diseño axiomático con los parámetros finales.
+    seleccionado, y actualiza la matriz de diseño axiomático con los parámetros finales.]]
+    [[ANALISIS: Escribe la parte del integrador del Dossier de Diseño Conceptual VDI 2206 de {system_type}. El resto del dossier lo genera
+    el código desde el modelo (concepto, requerimientos y su cumplimiento, arquitectura, matriz de diseño, parámetros, BOM y
+    presupuestos, decisiones, FMEA, cierre de ECR con el estado que dejó el cliente, supuestos, evidencia y comprobaciones): no lo
+    copies. Escribe exactamente tres secciones con estos títulos de nivel 2. "## Resumen ejecutivo": el concepto, cómo cumple
+    {primary_requirements} y el presupuesto {target_cost} según los totales del modelo, el estado de las ECR tal como lo dejó el
+    cliente y lo que falta para aprobar el concepto; si alguna ECR queda en No cumple o Pendiente de prueba, no lo declares aprobado
+    sin condiciones. "## Decisiones de integración": los conflictos entre dominios (dos informes con valores distintos para el mismo
+    parámetro) y los presupuestos de sistema que resuelves, en una tabla con las columnas parámetro, valor original y disciplina que lo
+    propuso, valor nuevo, motivo, cálculo que lo justifica e impacto en masa y costo; antes de cambiar un valor demuestra con un cálculo
+    que el original no cumple o es inconsistente. Tus decisiones no cambian el modelo ni el estado de las ECR: una ECR escalada o de
+    nivel sistema que resuelvas sigue en el estado que dejó el cliente y la resolución queda para el diseñador. Escribe Ninguna si no
+    hay. "## Cambios recomendados": otros cambios que consideres necesarios, en una tabla con las columnas parámetro, valor actual,
+    valor recomendado, motivo y cálculo, como tareas pendientes del diseñador. Escribe Ninguno si no hay.]]
     [[MODELO: Consulta el modelo para los totales y las comprobaciones automáticas; no registres cambios: tus decisiones quedan en el dossier.]]
-    REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.
+    [[TABLAS:REGLA DE FORMATO: Resume la arquitectura global combinando los diagramas Mermaid clave de cada disciplina. Evita redundancias de texto introductorio.]]
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
-    El expediente final consolidado (Conceptual Design Dossier) completo en formato Markdown según la metodología VDI 2206,
-    con la tabla de decisiones de integración, la tabla de cierre de ECR contra los criterios del cliente y un estado final coherente con ella.
+    [[TABLAS:El expediente final consolidado (Conceptual Design Dossier) completo en formato Markdown según la metodología VDI 2206,
+    con la tabla de decisiones de integración, la tabla de cierre de ECR contra los criterios del cliente y un estado final coherente con ella.]]
+    [[ANALISIS: Las tres secciones del integrador en Markdown: resumen ejecutivo, decisiones de integración y cambios recomendados.]]
   agent: team_lead
 
 # --- Tareas del ciclo de corrección (las arma src/vdi/ciclo.py) ---
@@ -222,14 +252,15 @@ domain_correction_task:
     valor original ya cumple el criterio de aceptación del cliente. No cambies el concepto seleccionado, el principio de solución ni
     la arquitectura; si una ECR lo exige (por ejemplo, si al corregir la evaluación de conceptos cambia el ganador), decláralo con el
     cálculo que lo demuestra y conserva el concepto actual. No cambies lo que no esté relacionado con lo asignado.
-    [[MODELO: Registra en el modelo cada cambio de tu tabla de cambios, con la columna ECR en cada fila. Si el cambio toca un elemento de otra disciplina, el modelo lo rechaza: nómbralo en Impacto en otros dominios.]]
+    [[MODELO: Registra en el modelo cada cambio de tu tabla de cambios, con la columna ECR en cada fila. Si el cambio toca un elemento de otra disciplina, el modelo lo rechaza: nómbralo en Impacto en otros dominios. Si la corrección cambia una elección de diseño, registra una decisión nueva con Reemplaza (la D-xx anterior) y Motivada por (la ECR); si una decisión vigente justifica un elemento que cambiaste y sigue valiendo, modifícala para dejarla al día.]]
+    [[ANALISIS: Tu respuesta es tu análisis actualizado (sin copiar tablas de datos del modelo), con la sección de cambios que se pide a continuación: el código agrega los cambios registrados en el modelo.]]
     ENTREGA: el informe completo y actualizado de tu dominio, con la misma estructura que el anterior, que empiece con la sección
     "## Cambios de la iteración [[ITERACION]]" y en ella una tabla Markdown con las columnas | ECR | Parámetro | Valor anterior |
     Valor nuevo | Cálculo o justificación | Impacto en otros dominios |. En Impacto en otros dominios escribe solo ninguno si el cambio
     no afecta a otro dominio; si afecta, nombra cada dominio afectado con exactamente una de estas palabras, sin tildes ni variantes:
     requerimientos, sintesis, mecanica, electronica, software, rams, seguida de dos puntos y de qué cambia para él (masa, potencia,
     señal, tiempo, pesos de la evaluación), por ejemplo "electronica: cambia la corriente de la válvula; rams: cambia la masa". No nombres un dominio que no esté afectado. Si resuelves una ECR
-    demostrando que el valor original cumple, regístrala con el mismo valor anterior y nuevo. Recalcula los totales afectados.
+    demostrando que el valor original cumple, regístrala con el mismo valor anterior y nuevo.[[TABLAS: Recalcula los totales afectados.]]
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
   expected_output: >
@@ -253,3 +284,31 @@ client_verification_task:
   expected_output: >
     La tabla de verificación con el estado de cada ECR abierta y las ECR nuevas, y un dictamen breve.
   agent: cliente
+
+# --- Informe para el ingeniero (F2; lo arma src/vdi/ciclo.py tras el dossier; VDI_INFORME_FINAL=0 lo apaga) ---
+
+engineer_report_task:
+  description: >
+    Escribe el informe del diseño conceptual de {system_type} para el ingeniero que debe decidir si aprueba el concepto. Tu contexto
+    son el dossier técnico (tablas generadas desde el modelo de diseño) y el historial del diseño. El código agrega después de cada
+    sección los gráficos y las tablas (arquitectura, uso de cada límite, masa y costo por módulo, decisiones, modos de falla y
+    pendientes): tú escribes solo la prosa que los explica, para una persona que no leyó los informes de las disciplinas.
+    REGLAS: No escribas tablas, diagramas Mermaid ni bloques de código. Cita los identificadores del modelo (RF-01, M-02, CP-03, D-01,
+    ECR-04, MF-02) cuando hables de un elemento. Usa solo cifras que estén en el dossier o en el historial, con su unidad; puedes
+    redondearlas, pero no calcules cifras nuevas ni inventes datos. El estado de cada ECR es el que dejó el cliente: no declares
+    aprobado ni cumplido lo que quedó en No cumple o Pendiente de prueba. Los precios son estimaciones del modelo, no cotizaciones.
+    Explica el porqué de las decisiones, no repitas las tablas.
+    ESTRUCTURA OBLIGATORIA: exactamente estas siete secciones, con estos títulos de nivel 2 y en este orden:
+    "## Resumen ejecutivo" (máximo 200 palabras: qué se diseñó, si cumple lo esencial y qué falta para aprobarlo),
+    "## Concepto y funcionamiento" (cómo funciona el sistema, de la necesidad al principio de solución, y cómo se reparte en módulos),
+    "## Cumplimiento de los requerimientos" (los que cumplen con margen, los que quedan cerca del límite y los que aún no tienen un valor que los mida),
+    "## Decisiones clave" (las decisiones que más pesan, qué alternativas se descartaron y por qué),
+    "## Masa y costo" (dónde se concentran y qué margen queda frente a los límites),
+    "## Riesgos" (los modos de falla más graves y las ECR que no cerraron, con su mitigación),
+    "## Qué falta para aprobar" (ensayos, supuestos por confirmar y cotizaciones, en orden de importancia).
+    EXTENSIÓN MÁXIMA: 1500 palabras en total.
+    CIERRE OBLIGATORIO: termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
+  expected_output: >
+    La prosa del informe para el ingeniero en Markdown, con las siete secciones pedidas, sin tablas ni diagramas, citando
+    identificadores y solo cifras del dossier o del historial.
+  agent: team_lead
