@@ -37,6 +37,10 @@ from pydantic import BaseModel
 
 UREG = pint.UnitRegistry()
 UREG.define("USD = [moneda] = usd")
+# unidades de conteo (adimensionales: ciclos/h, pasos, pines) y litros normales (Nl/s)
+for _d in ("ciclo = 1 = ciclos", "operacion = 1 = operaciones", "paso = 1 = pasos", "pin = 1 = pines",
+           "senal = 1 = senales", "unidad = 1 = unidades = und", "pieza = 1 = piezas", "Nl = liter = NL"):
+    UREG.define(_d)
 DIMENSION = {"masa": "[mass]", "costo": "[moneda]", "tiempo": "[time]"}
 UNIDAD_BASE = {"masa": "kg", "costo": "USD", "tiempo": "s"}
 SIN_UNIDAD = {"", "-", "—", "1", "adimensional", "n/a"}
@@ -46,7 +50,9 @@ def _texto_unidad(u: str) -> str:
     """Unidad escrita por el agente -> sintaxis de pint: N·m -> N*m, kg·m² -> kg*m**2, µm -> um, $ -> USD."""
     u = u.strip().replace("·", "*").replace("²", "**2").replace("³", "**3").replace("µ", "u").replace("μ", "u")
     u = re.sub(r"(?i)^(us\$|\$|usd)$", "USD", u.replace("Ω", "ohm"))
-    return u
+    u = re.sub(r"(?<=[a-zA-Z])([23])\b", r"**\1", u)  # cm3 -> cm**3, m2 -> m**2
+    # sin tildes ni enes (señales -> senales, operación -> operacion) sin cambiar mayusculas (mA, Nl)
+    return "".join(c for c in unicodedata.normalize("NFD", u) if unicodedata.category(c) != "Mn")
 
 
 def cantidad(valor: float, unidad: str) -> pint.Quantity:
@@ -119,7 +125,7 @@ CLASES = {
         "padre": (("padre", "funcion padre"), "id:funcion", False),
         "entradas": (("entradas", "flujos de entrada", "entrada"), "texto", False),
         "salidas": (("salidas", "flujos de salida", "salida"), "texto", False),
-        "modulo": (("modulo", "asignada a", "asignada_a"), "id:modulo", False),
+        "modulo": (("modulo", "asignada a", "asignada_a"), "id:modulo|sistema", False),  # SIS: la funcion global
     },
     "modulo": {
         "nombre": (("nombre", "modulo"), "texto", True),
@@ -152,8 +158,8 @@ CLASES = {
         "nivel": (("nivel", "nivel de evidencia"), "nivel", False),
     },
     "interfaz": {
-        "extremo_a": (("extremo a", "desde", "de"), "id:modulo|componente|externo", True),
-        "extremo_b": (("extremo b", "hacia", "a"), "id:modulo|componente|externo", True),
+        "extremo_a": (("extremo a", "desde", "de"), "id:sistema|modulo|componente|externo", True),
+        "extremo_b": (("extremo b", "hacia", "a"), "id:sistema|modulo|componente|externo", True),
         "tipo": (("tipo",), "enum:mecanica|energia|señal|datos|material", True),
         "protocolo": (("protocolo o niveles", "protocolo", "niveles"), "texto", False),
     },
@@ -495,7 +501,8 @@ class Modelo:
                 if j != parte.strip().strip("*` "):
                     avisos.append(f"«{parte.strip()}» se normalizó a {j}")
                 if "*" not in permitidas and clase_de_id(j) not in permitidas:
-                    raise ValueError(f"{j} es {clase_de_id(j)}; aquí va {' o '.join(permitidas)}")
+                    pista = "; SIS no es un módulo: usa el M-xx que contiene la función" if j == "SIS" else ""
+                    raise ValueError(f"{j} es {clase_de_id(j)}; aquí va {' o '.join(permitidas)}{pista}")
                 if j not in self.elementos and j not in nuevos:
                     existentes = sorted(e for e in self.elementos if clase_de_id(e) == clase_de_id(j))
                     lista = f"; existen: {', '.join(existentes)}" if existentes else f"; aún no hay {clase_de_id(j)}"
@@ -631,10 +638,13 @@ class Modelo:
                 if suma > limite * 1.000001:
                     salida.append(("K-04", f"la suma de presupuestos de {dim} ({suma:g} {UNIDAD_BASE[dim]}) supera {req.id} ({limite:g})"))
             if "K-05" in todas:
+                # un modulo puede pasarse de su presupuesto si otro le cede margen: solo avisa si se pasa mas del
+                # 10 % o si el total del sistema ya usa el 90 % de su limite (si no, el aviso es contabilidad)
+                justo = limite is not None and self.total_sistema(dim) >= 0.9 * limite
                 for m in modulos:
                     pres = self._q(m.campos.get(f"presupuesto_{dim}"), dim)
                     real = self.total_modulo(m.id, dim)
-                    if pres is not None and real > pres * 1.000001:
+                    if pres is not None and real > pres * (1.000001 if justo else 1.1):
                         salida.append(("K-05", f"{m.id}: {dim} {real:.4g} {UNIDAD_BASE[dim]} supera su presupuesto de {pres:g}"))
             if "K-06" in todas and limite is not None:
                 total = self.total_sistema(dim)
@@ -940,6 +950,9 @@ if __name__ == "__main__":
     k = mod.comprobar(["K-04", "K-05"])
     debe(any(x == "K-04" for x, _ in k) and any(x == "K-05" and "M-02" in m for x, m in k),
          "K-04 (presupuestos sobre el límite) y K-05 (módulo sobre su presupuesto)", str(k))
+    mod.registrar("modulo", "| ID | Presupuesto de masa |\n|---|---|\n| M-01 | 2.0 kg |\n| M-02 | 0.24 kg |", "lider")
+    k = mod.comprobar(["K-05"])
+    debe(not any("M-02" in m and "masa" in m for _, m in k), "K-05 tolera un exceso menor al 10 % lejos del límite", str(k))
     mod.descartar()
     mod.iniciar_tarea("prueba_parametros")
     r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Determina |\n|---|---|---|---|---|---|\n"
@@ -1003,6 +1016,19 @@ if __name__ == "__main__":
     k = mod.comprobar(["K-01"])
     debe(any("R-10 sin unidad" in m for _, m in k) and mod.elementos["E-09"].campos["unidad"] == "V",
          "K-01 avisa de una unidad vacía; «—» al modificar no borra la unidad", str(k))
+    r = mod.registrar("requerimiento", "| ID | Requerimiento | Comparador | Valor | Unidad | Verificación | ECR |\n|---|---|---|---|---|---|---|\n"
+                      "| R-11 | Vida útil | ≥ | 2e6 | ciclos | Ensayo | ECR-01 |\n| R-12 | Cadencia | ≥ | 600 | ciclos/h | Ensayo | ECR-01 |\n"
+                      "| R-13 | Caudal | ≤ | 1.5 | Nl/s | Medición | ECR-01 |\n| R-14 | Volumen | ≤ | 20 | cm3 | Cálculo | ECR-01 |\n"
+                      "| R-15 | Entradas | ≤ | 4 | señales | Revisión | ECR-01 |", "lider")
+    debe(r.startswith("Aplicadas 5") and cantidad(600, "ciclos/h").to("1/s").magnitude > 0.16
+         and abs(cantidad(20, "cm3").to("L").magnitude - 0.02) < 1e-9, "unidades de conteo, Nl/s y cm3", r)
+    r = mod.registrar("sistema", "| ID | Concepto | ECR |\n|---|---|---|\n| SIS | Vacío | ECR-01 |", "lider")
+    r2 = mod.registrar("interfaz", "| ID | Extremo A | Extremo B | Tipo | ECR |\n|---|---|---|---|---|\n"
+                       "| I-03 | SIS | X-01 | mecánica | ECR-01 |", "lider")
+    r3 = mod.registrar("funcion", "| ID | Función | Módulo | ECR |\n|---|---|---|---|\n| F-00 | Manipular la lámina | SIS | ECR-01 |", "lider")
+    debe(r2.startswith("Aplicadas 1") and r3.startswith("Aplicadas 1"), "SIS como extremo de interfaz y dueño de la función global", r + r2 + r3)
+    r = mod.registrar("componente", "| ID | Módulo | ECR |\n|---|---|---|\n| CP-02 | SIS | ECR-01 |", "mecanica")
+    debe("SIS no es un módulo" in r, "SIS como módulo de un componente se rechaza con la pista", r)
     mod.descartar()
     mod.iniciar_tarea("domain_correction_task", iteracion=1)
     r = mod.registrar("componente", "| ID | Acción |\n|---|---|\n| CP-03 | eliminar |", "mecanica")

@@ -13,12 +13,12 @@ REGLAS DE LAS TABLAS
 - En el ciclo de corrección cada fila lleva la columna ECR con la ECR que motiva el cambio.
 COLUMNAS POR CLASE (las marcadas con * son obligatorias al crear)
 - necesidad (N-xx): ID, Necesidad*, Stakeholder, Tipo* (exigencia o deseo), Importancia* (1 a 5).
-- requerimiento (RF-xx, RNF-xx, R-xx, E-xx): ID, Requerimiento*, Magnitud, Comparador (≤, ≥, = o rango), Valor (número, o rango como 2–4), Unidad (siempre: escribe — si es adimensional o cualitativo, como una señal presente/ausente; una unidad vacía se marca como olvido), Verificación, Deriva de (N-xx), Limita (masa o costo, solo en el requerimiento que limita la masa total o el costo total del sistema; exige comparador ≤ y una unidad de esa magnitud).
-- funcion (F-xx): ID, Función*, Padre (F-xx), Entradas, Salidas, Módulo (M-xx).
+- requerimiento (RF-xx, RNF-xx, R-xx, E-xx): ID, Requerimiento*, Magnitud, Comparador (≤, ≥, = o rango), Valor (número, o rango como 2–4), Unidad (siempre: escribe — si es adimensional o cualitativo, como una señal presente/ausente; las unidades de conteo valen: ciclos, ciclos/h, pasos, pines, señales, piezas; una unidad vacía se marca como olvido), Verificación, Deriva de (N-xx), Limita (masa o costo, solo en el requerimiento que limita la masa total o el costo total del sistema; exige comparador ≤ y una unidad de esa magnitud).
+- funcion (F-xx): ID, Función*, Padre (F-xx), Entradas, Salidas, Módulo (M-xx; SIS solo para la función global). El Módulo de un componente es siempre un M-xx.
 - modulo (M-xx): ID, Nombre*, Dominios* (mecanica, electronica, software, separados por punto y coma), Presupuesto de masa, Presupuesto de costo, Presupuesto de tiempo.
 - componente (CP-xx): ID, Nombre*, Módulo* (M-xx), Cantidad*, Masa unitaria*, Costo unitario*, Tipo (propio o comercial), Modelo candidato, Realiza (F-xx), Satisface (requerimientos que verifica), Fuente, Nivel. El dominio es el tuyo.
 - parametro (DP-xx): ID, Nombre*, Valor*, Unidad, Elemento* (SIS, M-xx o CP-xx), Determina (requerimientos que fija; solo valores de diseño, no la meta copiada del requerimiento), Fuente, Nivel.
-- interfaz (I-xx): ID, Extremo A*, Extremo B* (M-xx, CP-xx o X-xx), Tipo* (mecanica, energia, señal, datos o material), Protocolo o niveles.
+- interfaz (I-xx): ID, Extremo A*, Extremo B* (SIS, M-xx, CP-xx o X-xx; SIS para las interfaces de la caja negra antes de tener módulos), Tipo* (mecanica, energia, señal, datos o material), Protocolo o niveles.
 - ecr (ECR-xx): ID, Descripción*, Criterio de aceptación*, Afecta (ID de los elementos afectados).
 - externo (X-xx): ID, Nombre* (robot, pieza, gabinete, operador: lo que está fuera de la caja negra), Tipo, Datos conocidos. Solo el líder.
 - sistema (SIS): ID, Concepto*, Principio.

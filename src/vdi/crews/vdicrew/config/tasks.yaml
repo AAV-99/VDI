@@ -127,7 +127,7 @@ client_acceptance_review_task:
     arquitectura y los presupuestos de la síntesis del sistema; que los totales de cada tabla sumen sus líneas; y que las masas y
     dimensiones sean físicamente plausibles (volumen por densidad en piezas macizas). Cada ECR debe tener un
     criterio de aceptación verificable.
-    [[MODELO: Registra en el modelo cada ECR de tu informe, con el mismo ID, su Descripción, su Criterio de aceptación y Afecta (los ID de los elementos del modelo afectados). Las comprobaciones automáticas de la vista son una entrada de tu revisión: confirma cada una en los informes antes de convertirla en ECR.]]
+    [[MODELO: Registra en el modelo cada ECR de tu informe, con el mismo ID, su Descripción, su Criterio de aceptación y Afecta (los ID de los elementos del modelo afectados). Las comprobaciones automáticas de la vista son una entrada de tu revisión: confirma cada una en los informes antes de convertirla en ECR. Agrupa en una sola ECR de trazabilidad los avisos de enlaces y portadores (K-01, K-02, K-03, K-08 y los K-06 que solo dicen que un valor usa cierto porcentaje de su requerimiento), con Afecta la lista de elementos; abre una ECR propia solo para un incumplimiento real (un K-06 que dice «no cumple», un K-05 o un K-07 confirmado en los informes).]]
     REGLA DE FORMATO: Organiza la validación en una matriz de conformidad (Tabla Markdown) evaluando cada requisito frente al costo y desempeño propuesto.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -242,7 +242,7 @@ client_verification_task:
     esta iteración: [[ECR_ITERACION]]. Revisa los informes corregidos y sus tablas de cambios, y compara la evidencia de cada ECR
     atendida con tu criterio de aceptación literal. Si un cambio rompió algo que ya cumplía, o encuentras un problema nuevo en lo que se
     modificó, abre una ECR nueva con el siguiente número disponible y un criterio de aceptación verificable.
-    [[MODELO: Registra en el modelo solo las ECR nuevas, con Afecta; los estados los registra el código desde tu tabla. Usa las comprobaciones automáticas de la vista.]]
+    [[MODELO: Registra en el modelo solo las ECR nuevas, con Afecta; los estados los registra el código desde tu tabla. Usa las comprobaciones automáticas de la vista: los avisos de trazabilidad nuevos van juntos en una sola ECR, como en la revisión inicial, y un aviso que ya cubre una ECR abierta no abre otra.]]
     FORMATO OBLIGATORIO: una tabla Markdown con todas las ECR que no estaban en estado Cumple antes de esta iteración más las nuevas, con
     exactamente estas columnas: | ECR | Criterio de aceptación | Estado | Evidencia |. El Estado solo puede ser Cumple, No cumple o
     Pendiente de prueba (requiere medición, ensayo, prototipo, simulación o cotización que no se ha hecho), escrito tal cual y sin
