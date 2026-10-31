@@ -44,7 +44,11 @@ UREG = pint.UnitRegistry()
 UREG.define("USD = [moneda] = usd")
 # unidades de conteo (adimensionales: ciclos/h, pasos, pines) y litros normales (Nl/s)
 for _d in ("ciclo = 1 = ciclos", "operacion = 1 = operaciones", "paso = 1 = pasos", "pin = 1 = pines",
-           "senal = 1 = senales", "unidad = 1 = unidades = und", "pieza = 1 = piezas", "Nl = liter = NL"):
+           "senal = 1 = senales", "unidad = 1 = unidades = und", "pieza = 1 = piezas", "Nl = liter = NL",
+           # tiempo y multiplos en espanol, ya sin tildes ni enes (año -> ano)
+           "ano = year = anos = anio = anios", "mes = month = meses", "semana = week = semanas", "dia = day = dias",
+           "hora = hour = horas", "minuto = minute = minutos", "segundo = second = segundos",
+           "millon = 1e6 = millones"):
     UREG.define(_d)
 DIMENSION = {"masa": "[mass]", "costo": "[moneda]", "tiempo": "[time]"}
 UNIDAD_BASE = {"masa": "kg", "costo": "USD", "tiempo": "s"}
@@ -56,11 +60,29 @@ def _texto_unidad(u: str) -> str:
     u = u.strip().replace("·", "*").replace("²", "**2").replace("³", "**3").replace("µ", "u").replace("μ", "u")
     u = re.sub(r"(?i)^(us\$|\$|usd)$", "USD", u.replace("Ω", "ohm"))
     u = re.sub(r"(?<=[a-zA-Z])([23])\b", r"**\1", u)  # cm3 -> cm**3, m2 -> m**2
+    # millones de ciclos -> millones ciclos (pint leeria «de» como deci-carga elemental); USD por año -> USD/año
+    u = re.sub(r"\s+por\s+", "/", re.sub(r"\s+del?\s+", " ", u))
     # sin tildes ni enes (señales -> senales, operación -> operacion) sin cambiar mayusculas (mA, Nl)
     return "".join(c for c in unicodedata.normalize("NFD", u) if unicodedata.category(c) != "Mn")
 
 
+def conteos_nuevos(unidad: str) -> list[str]:
+    """Palabras de la unidad que pint no conoce. Cada una se define como unidad de conteo (adimensional): celdas,
+    intentos, puntos... Una lista de conteos nunca queda completa, y rechazar la fila cuesta otra ronda al agente."""
+    if unidad.strip().lower() in SIN_UNIDAD:
+        return []
+    nuevas = []
+    for palabra in dict.fromkeys(re.findall(r"[A-Za-z_]+", _texto_unidad(unidad))):
+        try:
+            UREG.parse_units(palabra)
+        except (pint.errors.UndefinedUnitError, AttributeError, ValueError):
+            UREG.define(f"{palabra} = 1")
+            nuevas.append(palabra)
+    return nuevas
+
+
 def cantidad(valor: float, unidad: str) -> pint.Quantity:
+    conteos_nuevos(unidad)
     return UREG.Quantity(valor, _texto_unidad(unidad) if unidad.strip().lower() not in SIN_UNIDAD else "")
 
 
@@ -497,6 +519,14 @@ class Modelo:
                 continue
             if not texto or texto in ("-", "—"):
                 continue
+            # la Fase 1 (01) registra las funciones antes de que exista el SIS (se crea en la sintesis, 01b): el
+            # Modulo SIS se omite con aviso en vez de rechazar la fila; la sintesis asigna los modulos
+            if (clase, campo) == ("funcion", "modulo") and normalizar_id(texto) == "SIS" \
+                    and "SIS" not in self.elementos and "SIS" not in nuevos:
+                aviso = "Módulo SIS omitido: el sistema aún no existe; la síntesis (01b) asigna el módulo de cada función"
+                if aviso not in avisos:
+                    avisos.append(aviso)
+                continue
             try:
                 campos[campo] = self._convertir(clase, campo, texto, nuevos, avisos)
             except ValueError as e:
@@ -600,6 +630,10 @@ class Modelo:
         if tipo == "unidad":
             if sin_tildes(texto).strip() in SIN_UNIDAD:
                 return ""
+            nuevas = conteos_nuevos(texto)
+            if nuevas:
+                avisos.append(f"«{', '.join(nuevas)}» de la unidad «{texto.strip()}» no es una unidad física: se "
+                              "registra como conteo (adimensional); si es masa, tiempo u otra magnitud, corrige la unidad")
             try:
                 cantidad(1, texto)
             except Exception:
@@ -809,13 +843,14 @@ class Modelo:
                 if suma > limite * 1.000001:
                     salida.append(("K-04", f"la suma de presupuestos de {dim} ({suma:g} {UNIDAD_BASE[dim]}) supera {req.id} ({limite:g})"))
             if "K-05" in todas:
-                # un modulo puede pasarse de su presupuesto si otro le cede margen: solo avisa si se pasa mas del
-                # 10 % o si el total del sistema ya usa el 90 % de su limite (si no, el aviso es contabilidad)
+                # un modulo puede pasarse de su presupuesto si otro le cede margen: solo avisa cuando el total del
+                # sistema ya usa el 90 % de su limite; con margen, el exceso de un modulo es contabilidad (en F1 y F1b
+                # abria ECR que solo reasignaban presupuestos) y queda visible en la consulta de presupuestos
                 justo = limite is not None and self.total_sistema(dim) >= 0.9 * limite
                 for m in modulos:
                     pres = self._q(m.campos.get(f"presupuesto_{dim}"), dim)
                     real = self.total_modulo(m.id, dim)
-                    if pres is not None and real > pres * (1.000001 if justo else 1.1):
+                    if justo and pres is not None and real > pres * 1.000001:
                         salida.append(("K-05", f"{m.id}: {dim} {real:.4g} {UNIDAD_BASE[dim]} supera su presupuesto de {pres:g}"))
             if "K-06" in todas and limite is not None:
                 total = self.total_sistema(dim)
@@ -1211,11 +1246,13 @@ if __name__ == "__main__":
     mod.iniciar_tarea("prueba_presupuestos")
     mod.registrar("modulo", "| ID | Presupuesto de masa |\n|---|---|\n| M-01 | 2.9 kg |\n| M-02 | 0.2 kg |", "lider")
     k = mod.comprobar(["K-04", "K-05"])
-    debe(any(x == "K-04" for x, _ in k) and any(x == "K-05" and "M-02" in m for x, m in k),
-         "K-04 (presupuestos sobre el límite) y K-05 (módulo sobre su presupuesto)", str(k))
-    mod.registrar("modulo", "| ID | Presupuesto de masa |\n|---|---|\n| M-01 | 2.0 kg |\n| M-02 | 0.24 kg |", "lider")
+    debe(any(x == "K-04" for x, _ in k) and not any(x == "K-05" and "masa" in m for x, m in k),
+         "K-04 (presupuestos sobre el límite); K-05 no avisa con margen en el sistema", str(k))
+    mod.registrar("componente", "| ID | Nombre | Módulo | Cantidad | Masa unitaria | Costo unitario |\n|---|---|---|---|---|---|\n"
+                  f"| CP-09 | Lastre | M-01 | 1 | {2.8 - mod.total_sistema('masa'):.3f} kg | 1 USD |", "mecanica")
     k = mod.comprobar(["K-05"])
-    debe(not any("M-02" in m and "masa" in m for _, m in k), "K-05 tolera un exceso menor al 10 % lejos del límite", str(k))
+    debe(any(x == "K-05" and "M-02" in m and "masa" in m for x, m in k),
+         "K-05 avisa del módulo sobre su presupuesto con el sistema al 90 % de su límite", str(k))
     mod.descartar()
     mod.iniciar_tarea("prueba_parametros")
     r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Determina |\n|---|---|---|---|---|---|\n"
@@ -1289,6 +1326,11 @@ if __name__ == "__main__":
                       "| R-15 | Entradas | ≤ | 4 | señales | Revisión | ECR-01 |", "lider")
     debe(r.startswith("Aplicadas 5") and cantidad(600, "ciclos/h").to("1/s").magnitude > 0.16
          and abs(cantidad(20, "cm3").to("L").magnitude - 0.02) < 1e-9, "unidades de conteo, Nl/s y cm3", r)
+    r = mod.registrar("requerimiento", "| ID | Requerimiento | Comparador | Valor | Unidad | Verificación | ECR |\n|---|---|---|---|---|---|---|\n"
+                      "| R-16 | Vida | ≥ | 5 | años | Ensayo | ECR-01 |\n| R-17 | Vida en ciclos | ≥ | 2 | millones de ciclos | Ensayo | ECR-01 |\n"
+                      "| R-18 | Celdas atendidas | ≥ | 2 | celdas | Revisión | ECR-01 |", "lider")
+    debe(r.startswith("Aplicadas 3") and "«celdas» de la unidad" in r and abs(cantidad(5, "años").to("h").magnitude - 43830) < 1
+         and cantidad(2, "millones de ciclos").to("").magnitude == 2e6, "años, millones de ciclos y conteo desconocido con aviso", r)
     r = mod.registrar("sistema", "| ID | Concepto | ECR |\n|---|---|---|\n| SIS | Vacío | ECR-01 |", "lider")
     r2 = mod.registrar("interfaz", "| ID | Extremo A | Extremo B | Tipo | ECR |\n|---|---|---|---|---|\n"
                        "| I-03 | SIS | X-01 | mecánica | ECR-01 |", "lider")
