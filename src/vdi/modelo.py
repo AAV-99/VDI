@@ -134,6 +134,30 @@ ID_RE = re.compile(r"^(RNF|RF|ECR|CP|DP|SIS|CAL|MAT|MF|FT|N|R|E|F|M|I|X|D)[\s\-�
 EVIDENCIA = ("calculo", "fuente", "matriz")  # las crea el codigo al usar las herramientas; los agentes las citan
 # campos de trazabilidad: cambiarlos no cambia el diseno, asi que no invalidan la decision que lo justifica (K-13)
 TRAZA = {"satisface", "realiza", "mide", "determina", "deriva_de", "fuente", "nivel", "iteracion"}
+# reparto de las comprobaciones (F2b): las de registro las repara el autor al final de su tarea, las colectivas
+# (portador y medida) el lider en un cierre, las del producto van al cliente y las de evidencia son informativas
+AUTOR, CIERRE, PRODUCTO, INFO = "autor", "cierre", "producto", "info"
+K_AUTOR = {"K-01", "K-02", "K-03", "K-09", "K-11", "K-12", "K-13", "K-14", "K-16"}
+# campos que fijan el diseno: una reparacion no los cambia si ya tienen valor (el analisis en prosa los defiende)
+VALOR_DISENO = {"valor", "unidad", "comparador", "cantidad", "masa_unitaria", "costo_unitario", "presupuesto_masa",
+                "presupuesto_costo", "presupuesto_tiempo", "s", "o", "d"}
+
+
+def destino(k: str, mensaje: str) -> str:
+    """A quien va un aviso de comprobar(): autor, cierre (lider), producto (cliente) o info."""
+    if k in K_AUTOR:
+        return AUTOR
+    if k == "K-08" or (k == "K-06" and "sin un parámetro que los mida" in mensaje):
+        return CIERRE
+    return INFO if k in ("K-10", "K-15") else PRODUCTO
+
+
+def sujetos(k: str, mensaje: str) -> list[str]:
+    """Elementos de los que habla un aviso: los listados en K-06 sin medida y K-12; en los demas, el primero."""
+    ids = ids_en_texto(mensaje)
+    if k == "K-12" or (k == "K-06" and "sin un parámetro que los mida" in mensaje):
+        return ids
+    return ids[:1]
 
 
 class Elemento(BaseModel):
@@ -349,13 +373,33 @@ class Modelo:
         self._paso, self._clave_paso = 0, None  # contador de (tarea, iteracion, rol) para Elemento.cambio
         # fuentes que devolvieron las herramientas y aun nadie cita: entran al modelo cuando un agente las cita
         self._candidatas: dict[str, tuple[str, dict, str]] = {}  # ID -> (clase, campos, rol)
+        # F2b: en una correccion con una sola ECR, la columna ECR se llena sola; en la ronda de reparacion no se
+        # cambia el diseno; con reparto, la vista del cliente separa producto, evidencia y avisos de registro
+        self.ecrs_tarea: list[str] = []  # ECR asignadas a la correccion en curso (para el mensaje de rechazo)
+        self.ecr_por_defecto: str | None = None
+        self.reparacion = False
+        self.reparto = False
+        self.notas_reparacion: dict[str, str] = {}  # "K-xx ID" -> nota del autor («se mantiene: ...»)
 
     # --- transacciones ---
 
-    def iniciar_tarea(self, tarea: str, iteracion: int = 0) -> None:
+    def iniciar_tarea(self, tarea: str, iteracion: int = 0, ecrs: list[str] | None = None) -> None:
+        """ecrs: las ECR asignadas a una correccion; con una sola, la columna ECR que falte se llena con ella."""
         self.tarea, self.iteracion = tarea, iteracion
+        self.ecrs_tarea = list(ecrs or [])
+        self.ecr_por_defecto = self.ecrs_tarea[0] if len(self.ecrs_tarea) == 1 else None
+        self.reparacion = False
         self._confirmado = copy.deepcopy(self.elementos)
         self._pendientes = []
+
+    def punto(self) -> tuple:
+        """Punto de retorno dentro de la transaccion (antes de una ronda de reparacion)."""
+        return copy.deepcopy(self.elementos), len(self._pendientes), dict(self._candidatas)
+
+    def volver(self, punto: tuple) -> None:
+        """Deshace lo hecho desde el punto, sin tocar lo anterior de la misma tarea."""
+        elementos, n, candidatas = punto
+        self.elementos, self._pendientes, self._candidatas = copy.deepcopy(elementos), self._pendientes[:n], candidatas
 
     def confirmar(self) -> None:
         """La tarea termino bien: sus operaciones van al registro y se guarda la foto del modelo."""
@@ -489,12 +533,21 @@ class Modelo:
         accion_texto = sin_tildes(celda.pop("accion", ""))
         ecr = normalizar_id(celda.pop("ecr", "")) if celda.get("ecr") else None
         existe = i in self.elementos
-        # en el ciclo cada cambio de un agente (no las ECR del cliente) lleva la ECR que lo motiva
+        # en el ciclo cada cambio de un agente (no las ECR del cliente) lleva la ECR que lo motiva; si falta, vale la
+        # ECR de Motivada por (en una decision) o la unica ECR de la correccion; en la reparacion no hace falta
         if self.iteracion and rol != "cliente" and clase != "ecr":
-            if not ecr:
-                errores.append("en el ciclo cada cambio lleva su ECR: agrega la columna ECR con la que lo motiva")
-            elif ecr not in self.elementos:
+            if not ecr and clase == "decision":
+                ecr = next((j for j in ids_en_texto(celda.get("motivada_por", "")) if j.startswith("ECR-")), None)
+            ecr = ecr or self.ecr_por_defecto
+            if not ecr and not self.reparacion:
+                # con varias ECR asignadas, el mensaje las lista para que el agente no tenga que buscarlas
+                errores.append("en el ciclo cada cambio lleva su ECR: agrega la columna ECR con la que lo motiva" +
+                               (f" (tus ECR en esta corrección: {', '.join(self.ecrs_tarea)})" if self.ecrs_tarea else ""))
+            elif ecr and ecr not in self.elementos:
                 errores.append(f"la ECR {ecr} no existe en el modelo")
+        if self.reparacion and (accion_texto.startswith("elimin") or (clase == "componente" and not existe)):
+            return None, ["en la reparación no se eliminan elementos ni se agregan componentes: es un cambio de diseño; "
+                          "si hace falta, escribe «se mantiene» con el motivo"], []
         if accion_texto.startswith("elimin"):
             if not existe:
                 return None, errores + [f"{i} no existe: no se puede eliminar"], []
@@ -565,14 +618,49 @@ class Modelo:
             if otro or nuevos_limita.get(dim, i) != i:
                 errores.append(f"ya hay un requerimiento que limita el total de {dim}: {otro or nuevos_limita[dim]}")
             nuevos_limita[dim] = i
+        if clase == "parametro" and ("mide" in campos or "unidad" in campos):
+            errores += self._errores_mide(i, {**(self.elementos[i].campos if existe else {}), **campos})
+        if self.reparacion and existe:
+            antes = self.elementos[i].campos
+            cambian = [c for c in campos if (c in VALOR_DISENO or (clase == "componente" and c in ("modulo", "dominio")))
+                       and antes.get(c) not in (None, "", []) and antes.get(c) != campos[c]]
+            if cambian:
+                errores.append(f"en la reparación no se cambian valores del diseño ({', '.join(CLASES[clase][c][0][0] for c in cambian)} "
+                               f"de {i}): completa campos vacíos, corrige enlaces o crea parámetros con su fuente")
         errores += self._propiedad(clase, i, campos, rol)
         if errores:
             return None, errores, avisos
         return self._op("modificar" if existe else "crear", clase, i, campos, rol, ecr), [], avisos
 
+    def _errores_mide(self, i: str, final: dict) -> list[str]:
+        """Un parametro mide un requerimiento de su misma magnitud y que no limite un total (ese lo mide el codigo)."""
+        errores = []
+        for rid in final.get("mide", []):
+            r = self.elementos.get(rid)
+            if not r:
+                continue
+            if r.campos.get("limita"):
+                errores.append(f"{rid} limita el total de {r.campos['limita']}: lo mide la suma que calcula el código, "
+                               "no un parámetro; usa la columna Contribuye a")
+                continue
+            u_r, u_p = r.campos.get("unidad", ""), final.get("unidad", "")
+            if not u_r or u_r == "—":
+                continue
+            try:
+                distinta = cantidad(1, u_p or "").dimensionality != cantidad(1, u_r).dimensionality
+            except Exception:
+                continue
+            if distinta:
+                errores.append(f"Mide: {i} está en «{u_p or 'sin unidad'}» y {rid} en «{u_r}» (magnitudes distintas): un "
+                               "parámetro solo mide un requerimiento de su misma magnitud; si aporta a él, usa la columna Contribuye a")
+        return errores
+
     def _op(self, accion, clase, i, campos, rol, ecr) -> dict:
-        return {"tarea": self.tarea, "iteracion": self.iteracion, "rol": rol, "accion": accion, "clase": clase,
-                "id": i, "campos": campos, "ecr": ecr, "hora": datetime.now().astimezone().isoformat(timespec="seconds")}
+        op = {"tarea": self.tarea, "iteracion": self.iteracion, "rol": rol, "accion": accion, "clase": clase,
+              "id": i, "campos": campos, "ecr": ecr, "hora": datetime.now().astimezone().isoformat(timespec="seconds")}
+        if self.reparacion:
+            op["reparacion"] = True
+        return op
 
     def _convertir(self, clase: str, campo: str, texto: str, nuevos: dict, avisos: list):
         tipo = CLASES[clase][campo][1]
@@ -832,7 +920,9 @@ class Modelo:
             salida += [("K-02", f"{r.id} no deriva de ninguna necesidad") for r in reqs
                        if not r.campos.get("deriva_de") and not r.id.startswith("E-")]
         if "K-03" in todas:
-            salida += [("K-03", f"{f.id} no está asignada a un módulo") for f in self.de_clase("funcion") if not f.campos.get("modulo")]
+            # sin modulos (despues de 01, antes de la sintesis) una funcion sin modulo no es un olvido
+            salida += [("K-03", f"{f.id} no está asignada a un módulo") for f in self.de_clase("funcion")
+                       if not f.campos.get("modulo") and modulos]
             salida += [("K-03", f"{m.id} sin presupuesto de {d}") for m in modulos for d in ("masa", "costo")
                        if not m.campos.get(f"presupuesto_{d}")]
         for dim in ("masa", "costo"):
@@ -916,8 +1006,7 @@ class Modelo:
                 alts = [a.strip() for a in c.get("alternativas", "").split(";") if a.strip()]
                 if len(alts) < 2:
                     falta.append("menos de dos alternativas (sepáralas con «;»)")
-                elif not any(sin_tildes(c.get("elegida", "")) in sin_tildes(a) or sin_tildes(a) in sin_tildes(c.get("elegida", ""))
-                             for a in alts):
+                elif not any(_misma_alternativa(c.get("elegida", ""), a) for a in alts):
                     falta.append("la elegida no está entre las alternativas")
                 if not c.get("criterios"):
                     falta.append("sin criterios")
@@ -967,6 +1056,55 @@ class Modelo:
             salida += [("K-16", f"{mf.id} ({mf.campos.get('modo', '')}) es de {mf.campos.get('elemento')}, que ya no existe")
                        for mf in self.de_clase("modo_falla") if mf.campos.get("elemento") not in self.elementos]
         return salida
+
+    # --- reparto de los avisos (F2b) ---
+
+    def pares(self) -> set[tuple[str, str]]:
+        """(K, ID) de cada elemento senalado por las comprobaciones: la foto para saber que avisos son nuevos."""
+        return {(k, j) for k, msg in self.comprobar() for j in sujetos(k, msg)}
+
+    def puede_modificar(self, i: str, rol: str) -> bool:
+        e = self.elementos.get(i)
+        return bool(e) and e.clase not in EVIDENCIA and not self._propiedad(e.clase, i, {}, rol)
+
+    def avisos_para(self, rol: str, antes: set[tuple[str, str]], destinos: tuple = (AUTOR,)) -> list[tuple[str, str, list[str]]]:
+        """Avisos (K, mensaje, elementos que le tocan) de los destinos pedidos que aparecieron despues de la foto
+        `antes` y nombran algo que el rol puede modificar: lo que la tarea dejo mal en lo suyo."""
+        salida = []
+        for k, msg in self.comprobar():
+            if destino(k, msg) not in destinos:
+                continue
+            suyos = [j for j in sujetos(k, msg) if (k, j) not in antes and self.puede_modificar(j, rol)]
+            if suyos:
+                salida.append((k, msg, suyos))
+        return salida
+
+    def vista_reparacion(self, avisos: list[tuple[str, str, list[str]]]) -> str:
+        """Los avisos de una ronda de reparacion y las filas de los elementos que nombran (y de lo que estos citan)."""
+        ids = list(dict.fromkeys(j for _, msg, _ in avisos for j in ids_en_texto(msg) if j in self.elementos))
+        for j in list(ids):  # la decision lleva sus alternativas; el parametro, su fuente; se agregan sus referencias
+            ids += [x for x in sorted(self._referencias(self.elementos[j])) if x in self.elementos and x not in ids and not x.startswith("ECR")]
+        lineas = [f"- {k} [{', '.join(suyos)}]: {msg}" for k, msg, suyos in avisos]
+        return "Avisos:\n" + "\n".join(lineas) + "\n\nFilas del modelo:\n" + "\n".join(
+            self._fila_texto(self.elementos[j]) for j in ids)
+
+    def _vista_cliente(self) -> str:
+        """Comprobaciones para el cliente con reparto: producto (materia de ECR), evidencia (informativa) y avisos de
+        registro con la nota del autor que los reviso."""
+        grupos = {PRODUCTO: [], INFO: [], "registro": []}
+        for k, msg in self.comprobar():
+            d = destino(k, msg)
+            if d in (AUTOR, CIERRE):
+                notas = [f"{j}: {self.notas_reparacion[f'{k} {j}']}" for j in sujetos(k, msg) if f"{k} {j}" in self.notas_reparacion]
+                grupos["registro"].append(f"- {k}: {msg}" + (f" — nota del autor: {'; '.join(notas)}" if notas else " — sin nota del autor"))
+            else:
+                grupos[d].append(f"- {k}: {msg}")
+        return "\n\n".join([
+            "Comprobaciones del producto (K-04, K-05, K-06, K-07; confírmalas en los análisis antes de abrir una ECR):\n" +
+            ("\n".join(grupos[PRODUCTO]) or "- sin avisos"),
+            "Calidad de la evidencia (K-10, K-15; informativa):\n" + ("\n".join(grupos[INFO]) or "- sin avisos"),
+            "Avisos de registro (enlaces, portadores, decisiones y citas), ya revisados por sus autores; no son materia de "
+            "ECR salvo que la nota revele un problema del producto:\n" + ("\n".join(grupos["registro"]) or "- sin avisos")])
 
     def _dominio_de(self, i: str | None) -> str | None:
         e = self.elementos.get(i or "")
@@ -1034,7 +1172,9 @@ class Modelo:
                 partes.append("Modos de falla de tus elementos:\n" + "\n".join(self._fila_texto(f) for f in mfs))
             partes.append(self.resumen_evidencia())
         partes.append("Totales calculados por el código:\n" + self.totales_texto())
-        if rol in ("cliente", "integrador"):
+        if rol == "cliente" and self.reparto:
+            partes.append(self._vista_cliente())
+        elif rol in ("cliente", "integrador"):
             avisos = self.comprobar()
             partes.append("Comprobaciones automáticas (K-01 a K-16):\n" + ("\n".join(f"- {k}: {m}" for k, m in avisos) or "- sin avisos"))
         return "\n\n".join(p for p in partes if p)
@@ -1148,6 +1288,24 @@ class Modelo:
         ruta = ruta or self.carpeta / "_modelo.ttl"
         g.serialize(destination=str(ruta), format="turtle")
         return ruta
+
+
+def _misma_alternativa(elegida: str, alternativa: str) -> bool:
+    """K-11: la elegida esta entre las alternativas aunque cambien parentesis, puntuacion o detalles (piloto de F2,
+    D-13: «X (sin sensor extra)» frente a «X (señal existente del ZK2, sin sensor extra)»)."""
+    def palabras(t: str, parentesis: bool) -> list[str]:
+        t = sin_tildes(t)
+        if not parentesis:
+            t = re.sub(r"\(.*?\)|\[.*?\]", " ", t)
+        return re.findall(r"\w+", t)
+    for parentesis in (True, False):
+        a, b = palabras(elegida, parentesis), palabras(alternativa, parentesis)
+        if not a or not b:
+            continue
+        ta, tb = " ".join(a), " ".join(b)
+        if ta in tb or tb in ta or set(a) <= set(b) or set(b) <= set(a):
+            return True
+    return False
 
 
 def _orden_id(i: str) -> tuple:
@@ -1433,6 +1591,62 @@ if __name__ == "__main__":
     debe(mod.disciplina_de("D-04") == "mecanica" and mod.disciplina_de("MF-01") == "rams" and mod.disciplina_de("CAL-01") is None,
          "disciplina de decisiones, modos de falla y evidencia")
     mod.confirmar()
+
+    # F2b: arreglos del piloto y ronda de reparacion
+    mod.iniciar_tarea("prueba_f2b", iteracion=3, ecrs=["ECR-01"])
+    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide |\n|---|---|---|---|---|---|\n"
+                      "| DP-20 | Diámetro de copa | 30 | mm | CP-02 | RF-01 |", "mecanica")
+    debe("magnitudes distintas" in r and "Contribuye a" in r, "Mide exige la misma magnitud que el requerimiento", r)
+    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide |\n|---|---|---|---|---|---|\n"
+                      "| DP-20 | Masa total | 2.1 | kg | SIS | RNF-01 |", "lider")
+    debe("lo mide la suma que calcula el código" in r, "un parámetro no mide un requerimiento con Limita", r)
+    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Contribuye a |\n|---|---|---|---|---|---|\n"
+                      "| DP-20 | Diámetro de copa | 30 | mm | CP-02 | RF-01 |", "mecanica")
+    debe(r.startswith("Aplicadas 1") and mod._pendientes[-1]["ecr"] == "ECR-01",
+         "en una corrección con una sola ECR la columna ECR se llena sola", r)
+    mod.ecrs_tarea, mod.ecr_por_defecto = ["ECR-01", "ECR-02"], None
+    r = mod.registrar("parametro", "| ID | Valor |\n|---|---|\n| DP-20 | 32 |", "mecanica")
+    debe("tus ECR en esta corrección: ECR-01, ECR-02" in r, "con varias ECR el rechazo lista las de la corrección", r)
+    r = mod.registrar("decision", "| ID | Asunto | Alternativas | Criterios | Elegida | Justificación | Evidencia | Justifica | Motivada por |\n"
+                      "|---|---|---|---|---|---|---|---|---|\n| D-05 | Detección de pieza | Sensor nuevo; Señal existente del ZK2 (sin sensor extra) | "
+                      "RF-01 | Señal del ZK2 (sin sensor extra) | Ahorra un sensor | CAL-01 | CP-05 | ECR-01 |", "electronica")
+    k = mod.comprobar(["K-11"])
+    debe(r.startswith("Aplicadas 1") and mod._pendientes[-1]["ecr"] == "ECR-01" and not any("D-05" in m for _, m in k),
+         "la decisión toma la ECR de Motivada por y K-11 acepta la elegida con otros detalles", r + str(k))
+    debe(destino("K-11", "x") == AUTOR and destino("K-08", "x") == CIERRE and destino("K-06", "con meta numérica y sin un parámetro que los mida") == CIERRE
+         and destino("K-06", "masa total usa el 95%") == PRODUCTO and destino("K-15", "x") == INFO, "reparto de las comprobaciones")
+    antes = mod.pares()
+    mod.registrar("decision", "| ID | Asunto | Alternativas | Criterios | Elegida | Justificación | Justifica | ECR |\n|---|---|---|---|---|---|---|---|\n"
+                  "| D-06 | Material de la placa | Aluminio; Acero | RF-01 | Aluminio | Ligero | CP-01 | ECR-01 |", "mecanica")
+    av_mec, av_ele = mod.avisos_para("mecanica", antes), mod.avisos_para("electronica", antes)
+    debe([k for k, _, _ in av_mec] == ["K-11"] and av_mec[0][2] == ["D-06"] and not av_ele,
+         "a la tarea le tocan solo los avisos nuevos de lo que puede modificar", str(av_mec) + str(av_ele))
+    v = mod.vista_reparacion(av_mec)
+    debe("K-11 [D-06]" in v and "- D-06:" in v and "- CP-01:" in v, "vista de la reparación: avisos y filas", v)
+    punto = mod.punto()
+    mod.reparacion = True
+    r = mod.registrar("parametro", "| ID | Valor |\n|---|---|\n| DP-20 | 35 |", "mecanica")
+    debe("no se cambian valores del diseño" in r, "la reparación no cambia valores existentes", r)
+    r = mod.registrar("componente", "| ID | Nombre | Módulo | Cantidad | Masa unitaria | Costo unitario |\n|---|---|---|---|---|---|\n"
+                      "| CP-30 | Tope | M-01 | 1 | 0.01 kg | 1 USD |", "mecanica")
+    r2 = mod.registrar("parametro", "| ID | Acción |\n|---|---|\n| DP-20 | eliminar |", "mecanica")
+    debe("no se eliminan elementos ni se agregan componentes" in r and "no se eliminan" in r2, "la reparación no agrega componentes ni elimina", r + r2)
+    r = mod.registrar("decision", "| ID | Evidencia |\n|---|---|\n| D-06 | CAL-01 |", "mecanica")
+    r2 = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Fuente |\n|---|---|---|---|---|---|\n"
+                       "| DP-21 | Espesor de placa | 6 | mm | CP-01 | CAL-01 |", "mecanica")
+    debe(r.startswith("Aplicadas 1") and r2.startswith("Aplicadas 1") and mod._pendientes[-1].get("reparacion")
+         and not mod.avisos_para("mecanica", antes), "la reparación completa campos y crea parámetros sin columna ECR", r + r2)
+    mod.reparacion = False
+    mod.volver(punto)
+    debe("DP-21" not in mod.elementos and not mod.elementos["D-06"].campos.get("evidencia") and len(mod.avisos_para("mecanica", antes)) == 1,
+         "volver deshace solo la ronda de reparación")
+    mod.reparto = True
+    mod.notas_reparacion["K-11 D-06"] = "se mantiene: la evidencia es el ensayo de taller"
+    v = mod.vista("cliente")
+    debe("Comprobaciones del producto" in v and "Calidad de la evidencia" in v and "nota del autor: D-06: se mantiene" in v
+         and "K-08: RNF-02" in v.split("Avisos de registro")[1], "vista del cliente con reparto y nota del autor", v.split("Comprobaciones del producto")[1])
+    mod.reparto = False
+    mod.descartar()
 
     # reanudacion y exportacion
     otro = Modelo(carpeta)

@@ -138,12 +138,12 @@ client_acceptance_review_task:
   description: >
     Revisar de forma integral las propuestas técnicas entregadas para {system_type} asegurando el cumplimiento
     de {primary_requirements} y el {target_cost}. Emitir el dictamen de validación, observaciones de usabilidad y solicitudes de cambio.
-    VERIFICACIÓN METODOLÓGICA: Comprueba que cada requerimiento tenga valor medible, método de verificación y un portador de función o
-    componente asignado; que el concepto seleccionado sea consistente con la evaluación de conceptos; que los diseños de dominio respeten la
+    VERIFICACIÓN METODOLÓGICA: Comprueba[[TABLAS: que cada requerimiento tenga valor medible, método de verificación y un portador de función o
+    componente asignado;]] que el concepto seleccionado sea consistente con la evaluación de conceptos; que los diseños de dominio respeten la
     arquitectura y los presupuestos de la síntesis del sistema; que los totales de cada tabla sumen sus líneas; y que las masas y
     dimensiones sean físicamente plausibles (volumen por densidad en piezas macizas). Cada ECR debe tener un
     criterio de aceptación verificable.
-    [[MODELO: Registra en el modelo cada ECR de tu informe, con el mismo ID, su Descripción, su Criterio de aceptación y Afecta (los ID de los elementos del modelo afectados). Las comprobaciones automáticas de la vista son una entrada de tu revisión: confirma cada una en los informes antes de convertirla en ECR. Agrupa en una sola ECR de trazabilidad los avisos de enlaces y portadores (K-01, K-02, K-03, K-08 y los K-06 que solo dicen que un valor usa cierto porcentaje de su requerimiento), con Afecta la lista de elementos; abre una ECR propia solo para un incumplimiento real (un K-06 que dice «no cumple», un K-05 o un K-07 confirmado en los informes).]]
+    [[MODELO: Registra en el modelo cada ECR de tu informe, con el mismo ID, su Descripción, su Criterio de aceptación y Afecta (los ID de los elementos del modelo afectados). Las comprobaciones automáticas de la vista son una entrada de tu revisión: confirma cada una en los informes antes de convertirla en ECR. [[TABLAS:Agrupa en una sola ECR de trazabilidad los avisos de enlaces y portadores (K-01, K-02, K-03, K-08 y los K-06 que solo dicen que un valor usa cierto porcentaje de su requerimiento), con Afecta la lista de elementos; abre una ECR propia solo para un incumplimiento real (un K-06 que dice «no cumple», un K-05 o un K-07 confirmado en los informes).]][[ANALISIS: La vista separa las comprobaciones del producto, que son materia de ECR si las confirmas en los informes (un K-06 que dice «no cumple», un K-05 o un K-07), de los avisos de registro (enlaces, portadores, decisiones y citas), que ya revisaron sus autores: no abras ECR por ellos; abre una solo si la nota del autor revela un problema del producto, por ejemplo un requerimiento que ningún componente realiza. Dedica tu revisión al diseño: cálculos, márgenes frente a los límites, plausibilidad física y supuestos sin respaldo; un valor que queda justo en su límite necesita un respaldo independiente del cálculo que lo fijó.]]]]
     REGLA DE FORMATO: Organiza la validación en una matriz de conformidad (Tabla Markdown) evaluando cada requisito frente al costo y desempeño propuesto.
     EXTENSIÓN MÁXIMA: El informe completo no debe superar las {max_palabras} palabras. Prioriza el contenido esencial y no agregues anexos de relleno.
     CIERRE OBLIGATORIO: Entrega el documento completo y termina SIEMPRE con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
@@ -273,7 +273,7 @@ client_verification_task:
     esta iteración: [[ECR_ITERACION]]. Revisa los informes corregidos y sus tablas de cambios, y compara la evidencia de cada ECR
     atendida con tu criterio de aceptación literal. Si un cambio rompió algo que ya cumplía, o encuentras un problema nuevo en lo que se
     modificó, abre una ECR nueva con el siguiente número disponible y un criterio de aceptación verificable.
-    [[MODELO: Registra en el modelo solo las ECR nuevas, con Afecta; los estados los registra el código desde tu tabla. Usa las comprobaciones automáticas de la vista: los avisos de trazabilidad nuevos van juntos en una sola ECR, como en la revisión inicial, y un aviso que ya cubre una ECR abierta no abre otra.]]
+    [[MODELO: Registra en el modelo solo las ECR nuevas, con Afecta; los estados los registra el código desde tu tabla. [[TABLAS:Usa las comprobaciones automáticas de la vista: los avisos de trazabilidad nuevos van juntos en una sola ECR, como en la revisión inicial, y un aviso que ya cubre una ECR abierta no abre otra.]][[ANALISIS: Los avisos de registro de la vista ya los revisaron sus autores: no abras ECR por ellos salvo que la nota revele un problema del producto; una comprobación del producto que ya cubre una ECR abierta no abre otra.]]]]
     FORMATO OBLIGATORIO: una tabla Markdown con todas las ECR que no estaban en estado Cumple antes de esta iteración más las nuevas, con
     exactamente estas columnas: | ECR | Criterio de aceptación | Estado | Evidencia |. El Estado solo puede ser Cumple, No cumple o
     Pendiente de prueba (requiere medición, ensayo, prototipo, simulación o cotización que no se ha hecho), escrito tal cual y sin
@@ -284,6 +284,30 @@ client_verification_task:
   expected_output: >
     La tabla de verificación con el estado de cada ECR abierta y las ECR nuevas, y un dictamen breve.
   agent: cliente
+
+# --- Ronda de reparación del modelo (F2b; la arma src/vdi/ciclo.py al final de cada tarea de un autor y en el cierre del líder) ---
+
+model_repair_task:
+  description: >
+    Ronda de reparación del modelo de diseño de {system_type}, al final de la tarea [[TAREA]]. Las comprobaciones automáticas
+    encontraron estos avisos de registro en elementos que puedes modificar (entre corchetes, los ID que te tocan), seguidos de las
+    filas actuales de esos elementos:
+    [[AVISOS]]
+    REGLAS: Repara cada aviso con registrar_en_modelo: completa los campos vacíos, corrige los enlaces (Deriva de, Satisface, Mide,
+    Contribuye a, Justifica, Evidencia), reescribe las alternativas o la elegida de una decisión para que la elegida sea una de
+    ellas, cita una evidencia que ya existe (CAL-xx, FT-xx, MAT-xx) o declara Fuente Supuesto y Nivel N1, o crea un parámetro con
+    su fuente. En un aviso de portador o de medida (K-08, K-06), registra un parámetro del SIS o de un módulo que mida el
+    requerimiento (Mide, de su misma magnitud) o que aporte a él (Contribuye a); si el portador es un componente de un dominio,
+    escribe que se mantiene y de qué dominio es. No cambies valores del diseño (valores, unidades, cantidades, masas, costos,
+    presupuestos, S, O y D), no agregues componentes ni elimines elementos: el modelo lo rechaza, porque tu análisis ya defiende
+    esos valores. Si un aviso no se puede reparar sin cambiar el diseño, o es correcto tal como está, déjalo y explica por qué. No
+    hace falta la columna ECR.
+    RESPUESTA: una línea por aviso con su K y su ID, en la forma "- K-11 D-03: corregido" o "- K-08 RF-04: se mantiene: motivo en
+    una frase". Nada más: sin informe ni tablas.
+    CIERRE OBLIGATORIO: termina con la línea exacta <!-- FIN DEL INFORME --> como última línea, sin texto después.
+  expected_output: >
+    Una línea por aviso con su K y su ID: corregido, o se mantiene con el motivo en una frase.
+  agent: team_lead
 
 # --- Informe para el ingeniero (F2; lo arma src/vdi/ciclo.py tras el dossier; VDI_INFORME_FINAL=0 lo apaga) ---
 

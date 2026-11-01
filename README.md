@@ -141,6 +141,7 @@ Cada corrida queda en su propia carpeta dentro de `output/` (ignorada por Git):
 | `_llm.log` | Una línea por respuesta del modelo: tokens, tiempo, motivo de fin y herramientas pedidas |
 | `_herramientas.log` | Cada uso de una herramienta, con la tarea que lo pidió, el inicio del resultado y las fuentes devueltas (páginas de los manuales o URL) |
 | `_modelo_ops.jsonl`, `_modelo.json`, `_modelo.ttl` | Modelo de diseño compartido: cada operación confirmada (tarea, rol, iteración, ECR), la foto del modelo con sus totales y la exportación a RDF (Turtle) al final. En `_iteraciones.json` quedan además las comprobaciones K-01 a K-10 tras la pasada inicial y al final, y el impacto declarado frente al calculado de cada corrección |
+| `_reparaciones/` | Con informes generados (F2b): respuesta de cada ronda de reparación del modelo (el autor de una tarea repara los avisos de registro que dejó; el líder cierra portadores y medidas después de 05 y de las correcciones de cada iteración). En `_iteraciones.json`, «reparaciones» guarda los avisos enviados, los corregidos, los que se mantienen con su nota y el costo de cada ronda |
 | `_web.jsonl` | Cada búsqueda web completa: consulta, y URL, título y extracto exacto de cada resultado que recibió el agente, para verificar las citas web |
 | `llm_vacias/` | Petición y respuesta completas de cada respuesta vacía del modelo, para analizarlas |
 | `corrida.log` | Log completo de CrewAI |
