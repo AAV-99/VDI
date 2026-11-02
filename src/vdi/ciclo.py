@@ -37,12 +37,14 @@ Al final, el lider escribe la prosa del informe para el ingeniero y el codigo le
 (00_informe_ingeniero.html, informe_final.py; VDI_INFORME_FINAL=0 lo apaga).
 
 Reparacion del modelo (F2b, con informes generados): al terminar una tarea de un autor (01 a 05 y las correcciones),
-los avisos de registro nuevos que nombran algo suyo (K-01, K-02, K-03, K-09, K-11 a K-14, K-16) vuelven al mismo
+los avisos de registro nuevos que nombran algo suyo (K-01, K-02, K-03, K-09, K-11 a K-14, K-16, K-17) vuelven al mismo
 agente en una ronda corta (model_repair_task, solo herramientas del modelo) antes de confirmar; la ronda no cambia
 valores del diseno y, si falla, se deshace sin tumbar la tarea. Los portadores y las medidas (K-08, K-06 sin medida)
-los cierra el lider despues de 05 y de las correcciones de cada iteracion. El cliente ve aparte las comprobaciones del
-producto, la calidad de la evidencia y los avisos de registro con la nota del autor. Cada ronda queda en
-_reparaciones/ y en «reparaciones» de _iteraciones.json.
+los cierra el lider despues de 05 y de las correcciones de cada iteracion; lo que ya mantuvo con nota no se le
+reenvia mientras el elemento no cambie su diseno. El cliente ve aparte las comprobaciones del producto, la calidad de
+la evidencia y los avisos de registro con la nota del autor. Si el cliente nombra en su analisis ECR que no registro,
+una ronda corta le pide registrarlas y, si no lo hace, las registra el codigo con el titulo del analisis. Cada ronda
+queda en _reparaciones/ y en «reparaciones» de _iteraciones.json.
 """
 import csv
 import json
@@ -336,11 +338,12 @@ def _ejecutar(vc: VdiCrew, tareas: list[Task], inputs: dict) -> None:
 
 
 def _correr(vc: VdiCrew, tarea: Task, inputs: dict, iteracion: int = 0, despues=None, rol: str | None = None,
-            ecrs: list[str] | None = None) -> None:
+            ecrs: list[str] | None = None, ecr_cliente: bool = False) -> None:
     """Ejecuta una tarea dentro de su transaccion del modelo: si termina bien, despues(m) registra lo que el codigo
     extrae de su informe, el autor (rol) repara los avisos de registro que dejo y se confirma; si falla, sus cambios
     se descartan. ecrs: las ECR de una correccion (con una sola, llena la columna ECR que falte; con varias, el
-    rechazo por falta de ECR las lista)."""
+    rechazo por falta de ECR las lista). ecr_cliente: tarea del cliente (06 o verificacion), cuyas ECR del analisis
+    deben quedar en el modelo."""
     m = MODELO["m"]
     stem = Path(tarea.output_file).stem
     antes = None
@@ -354,11 +357,13 @@ def _correr(vc: VdiCrew, tarea: Task, inputs: dict, iteracion: int = 0, despues=
             m.descartar()
         raise
     if m:
+        rondas = [_ecr_del_cliente(vc, inputs, m, stem, tarea.agent)] if ecr_cliente and REPARACION else []
         if despues:
             despues(m)
-        ronda = _reparar(vc, inputs, m, stem, rol, tarea.agent, m.avisos_para(rol, antes)) if antes is not None else None
+        rondas.append(_reparar(vc, inputs, m, stem, rol, tarea.agent, m.avisos_para(rol, antes)) if antes is not None else None)
         m.confirmar()
-        _anotar_reparacion(ronda)
+        for ronda in rondas:
+            _anotar_reparacion(ronda)
         if INFORMES_GENERADOS:
             _generar_informe(stem)
 
@@ -377,7 +382,8 @@ def leer_notas(texto: str, pendientes: list[tuple[str, str]]) -> dict[str, str]:
     return notas
 
 
-def _reparar(vc: VdiCrew, inputs: dict, m: Modelo, stem: str, rol: str, agente, avisos: list) -> dict | None:
+def _reparar(vc: VdiCrew, inputs: dict, m: Modelo, stem: str, rol: str, agente, avisos: list,
+             contexto: list | None = None) -> dict | None:
     """Ronda de reparacion dentro de la transaccion en curso: el agente recibe sus avisos y las filas que nombran, y
     solo tiene las herramientas del modelo. No cambia valores del diseno (modo reparacion de modelo.py). Si falla, sus
     cambios se deshacen y la tarea se confirma igual (sus avisos llegan al cliente sin nota). Devuelve el registro."""
@@ -391,7 +397,8 @@ def _reparar(vc: VdiCrew, inputs: dict, m: Modelo, stem: str, rol: str, agente, 
     desc = cfg["description"].replace("[[TAREA]]", stem).replace("[[AVISOS]]", _sin_llaves(m.vista_reparacion(avisos)))
     tarea = Task(description=desc, expected_output=cfg["expected_output"], agent=agente, name="model_repair_task",
                  tools=[RegistrarEnModelo(rol=rol, max_usage_count=MAX_REGISTROS_REPARACION),
-                        ConsultarModelo(max_usage_count=MAX_CONSULTAS_REPARACION)])
+                        ConsultarModelo(max_usage_count=MAX_CONSULTAS_REPARACION)],
+                 **({"context": contexto} if contexto else {}))
     m.reparacion = True
     try:
         _ejecutar(vc, [tarea], inputs)
@@ -409,11 +416,47 @@ def _reparar(vc: VdiCrew, inputs: dict, m: Modelo, stem: str, rol: str, agente, 
         actuales = m.pares()
         registro["corregidos"] = [f"{k} {j}" for k, j in enviados if (k, j) not in actuales]
         registro["se_mantienen"] = leer_notas(texto, [(k, j) for k, j in enviados if (k, j) in actuales])
+        if stem.startswith("cierre_"):  # lo mantenido no se reenvia en el proximo cierre si su diseno no cambia
+            registro["huella_al_mantener"] = {kj: m.huella(kj.split(" ", 1)[1]) for kj in registro["se_mantienen"]}
         registro["texto"] = texto.replace(MARCA_FIN, "").strip()
         _registrar_guardrail(f"model_repair_task:{stem}", "REPARACION",
                              f"{len(registro['corregidos'])} de {len(enviados)} corregidos", texto)
     registro.update(peticiones=_peticiones_llm() - inicio, tokens=_tokens_desde(inicio), segundos=round(time.time() - t0))
     return registro
+
+
+def _titulo_ecr(texto: str, e: str) -> str:
+    """Titulo de la ECR en el analisis del cliente («ECR-01 — Umbral de ...»), para registrarla si el cliente no lo hizo."""
+    for linea in texto.splitlines():
+        hallada = ID_ECR.search(linea)
+        if hallada and f"ECR-{int(hallada.group(1)):02d}" == e:
+            resto = " ".join(re.sub(r"[*#_`|]", " ", linea[hallada.end():]).split()).strip(" —–-:.")
+            if len(resto) >= 10:
+                return resto[:300]
+    return f"{e} del análisis del cliente"
+
+
+def _ecr_del_cliente(vc: VdiCrew, inputs: dict, m: Modelo, stem: str, agente) -> dict | None:
+    """ECR que el cliente nombra en su analisis y no registro (27886: sin ellas, las correcciones citaban ECR
+    inexistentes). Primero una ronda corta del cliente con su analisis como contexto; lo que siga faltando lo registra
+    el codigo con el titulo del analisis, sin Afecta. Devuelve el registro de la ronda."""
+    texto = _agente_txt(RUN_DIR / f"{stem}.md")
+    faltan = [e for e in dict.fromkeys(f"ECR-{int(n):02d}" for n in ID_ECR.findall(texto)) if e not in m.elementos]
+    if not faltan:
+        return None
+    aviso = ("ECR", f"{', '.join(faltan)} están en tu análisis pero no en el modelo: regístralas (clase ecr) con el mismo ID, "
+                    "Descripción, Criterio de aceptación y Afecta (los ID de los elementos del modelo afectados), tomados de tu análisis", faltan)
+    ronda = _reparar(vc, inputs, m, stem, "cliente", agente, [aviso], [_previa(stem, texto, agente)])
+    ronda["corregidos"] = [f"ECR {e}" for e in faltan if e in m.elementos]
+    ronda.pop("se_mantienen", None)
+    siguen = [e for e in faltan if e not in m.elementos]
+    if siguen:
+        _registrar_codigo(m, ["Descripción", "Criterio de aceptación"],
+                          [[e, _titulo_ecr(texto, e), f"el de {e} en el análisis del cliente ({stem})"] for e in siguen],
+                          "cliente", ronda)
+        ronda["por_codigo"] = [e for e in siguen if e in m.elementos]
+        _registrar_guardrail(stem, "ECR_POR_CODIGO", f"{', '.join(siguen)}: el cliente no las registró", "")
+    return ronda
 
 
 def _anotar_reparacion(ronda: dict | None) -> None:
@@ -422,6 +465,7 @@ def _anotar_reparacion(ronda: dict | None) -> None:
         return
     m, h = MODELO["m"], HIST["h"]
     m.notas_reparacion.update(ronda.get("se_mantienen", {}))
+    m.mantenidos.update(ronda.get("huella_al_mantener", {}))
     if "texto" in ronda:
         REPARACIONES.mkdir(parents=True, exist_ok=True)
         (REPARACIONES / f"{ronda['tarea']}.md").write_text(ronda.pop("texto") + "\n", encoding="utf-8")
@@ -438,7 +482,9 @@ def _cierre(vc: VdiCrew, inputs: dict, k: int) -> None:
     if not (REPARACION and m) or any(r["tarea"] == stem for r in (h or {}).get("reparaciones", [])):
         return
     m.iniciar_tarea(stem, k)
-    ronda = _reparar(vc, inputs, m, stem, "lider", vc.team_lead(), m.avisos_para("lider", set(), (CIERRE,)))
+    # 27886: las 3 rondas recibieron los mismos 6 avisos y los mantuvieron (1,3 h); sin avisos nuevos no hay ronda
+    mantenidos = {tuple(kj.split(" ", 1)) for kj, hu in m.mantenidos.items() if m.huella(kj.split(" ", 1)[1]) == hu}
+    ronda = _reparar(vc, inputs, m, stem, "lider", vc.team_lead(), m.avisos_para("lider", mantenidos, (CIERRE,)))
     m.confirmar()
     _anotar_reparacion(ronda)
 
@@ -518,7 +564,7 @@ def pasada_inicial(vc: VdiCrew, inputs: dict) -> None:
                          expected_output=por_modo(cfg["expected_output"]), agent=agente, context=list(hechas),
                          output_file=_salida(ruta), name=clave, guardrail=guardrail_informe_completo(clave),
                          guardrail_max_retries=MAX_REINTENTOS_INCOMPLETO)
-            _correr(vc, tarea, inputs, rol=None if nombre == "cliente" else ROL_AGENTE[nombre])
+            _correr(vc, tarea, inputs, rol=None if nombre == "cliente" else ROL_AGENTE[nombre], ecr_cliente=nombre == "cliente")
         hechas.append(_previa(base, _leer(ruta), agente))
 
 
@@ -576,7 +622,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
 
     # b. Correcciones, en orden; los impactos declarados sobre disciplinas posteriores se revisan en esta iteracion.
     # Una correccion que falla tras sus intentos no tumba la corrida: su informe queda en la version anterior y sus
-    # ECR cuentan como fallidas (a la segunda falla quedan escaladas para el integrador).
+    # ECR cuentan como fallidas y quedan escaladas para el integrador sin esperar otra iteracion.
     cambios_previos, impactadas, ejecutadas, calculados = [], {}, [], {}
     fallidas_correccion = registro.setdefault("correcciones_fallidas", {})
     for d in ORDEN:
@@ -640,7 +686,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
                                          {"ITERACION": k, "ECR_ITERACION": ", ".join(atendidas)},
                                          lambda t: None if leer_verificacion(t) else "falta la tabla | ECR | Criterio de aceptación | Estado | Evidencia |",
                                          _vista("cliente")),
-                          vc, inputs, k, registrar_estados)
+                          vc, inputs, k, registrar_estados, ecr_cliente=True)
         if fallo:  # las correcciones quedan sin verificar: el integrador solo ve el estado anterior del cliente
             registro["resultado"] = "verificación fallida"
             registro["fallo"] = fallo
@@ -654,7 +700,8 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
     anteriores = {f["ecr"] for it in h["iteraciones"] if it["iteracion"] < k for f in it.get("triaje", [])}
     registro["nuevas"] = sorted(set(estados) - anteriores - {f["ecr"] for f in triaje})
 
-    # ECR que fallan MAX_FALLOS_ECR veces seguidas quedan escaladas
+    # ECR que fallan MAX_FALLOS_ECR veces seguidas quedan escaladas; las de una correccion que no entrego informe, a la
+    # primera: repetirla en la iteracion siguiente vuelve a caer en bucle (23662, 24434, 27885: ≈ 1,3 h sin resultado)
     for e in registro["fallidas"]:
         racha = 0
         for it in sorted(h["iteraciones"], key=lambda x: x["iteracion"], reverse=True):
@@ -662,7 +709,7 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
                 racha += 1
             else:
                 break
-        if racha >= MAX_FALLOS_ECR and e not in h["escaladas"]:
+        if (racha >= MAX_FALLOS_ECR or e in no_corregidas) and e not in h["escaladas"]:
             h["escaladas"].append(e)
     registro["fin"] = datetime.now().astimezone().isoformat(timespec="seconds")
     registro["tokens"] = _tokens_desde(registro["peticion_inicial"])
@@ -686,7 +733,8 @@ def _resumen_historial(h: dict) -> str:
     if sin_corregir:
         lineas += ["", "Correcciones que fallaron (la disciplina no pudo entregar su informe; sus ECR cuentan como fallidas "
                        "y pueden indicar un problema de concepto): " + "; ".join(sin_corregir) + "."]
-    lineas += ["", f"ECR escaladas por fallar {MAX_FALLOS_ECR} veces: {', '.join(h['escaladas']) or 'ninguna'}.",
+    lineas += ["", f"ECR escaladas (fallaron {MAX_FALLOS_ECR} veces en la verificación o su corrección no entregó informe): "
+                   f"{', '.join(h['escaladas']) or 'ninguna'}.",
                f"ECR de nivel sistema (concepto o arquitectura), no enviadas a las disciplinas: {', '.join(sistema) or 'ninguna'}. "
                "Si resuelves alguna con una decisión tuya, queda en Pendiente de prueba: el cliente no la verificó.",
                f"Motivo de fin del ciclo: {h.get('fin') or 'sin ciclo'}."]
@@ -807,6 +855,7 @@ def ejecutar(inputs: dict):
         m.reparto = REPARACION
         for ronda in h.get("reparaciones", []):
             m.notas_reparacion.update(ronda.get("se_mantienen", {}))
+            m.mantenidos.update(ronda.get("huella_al_mantener", {}))
         MODELO["m"] = m
         usar_modelo(m)
     vc = VdiCrew()

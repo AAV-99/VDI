@@ -18,7 +18,7 @@ cita) y matrices MAT-xx. Los agentes no registran evidencia: la citan por su ID.
 
 Validacion en cuatro capas: 1) esquema (campos, enumeraciones, unidades con pint), 2) referencias (IDs existentes;
 RF01 o RF-001 se normalizan a RF-01 con aviso), 3) propiedad (cada clase y campo tiene duenos) y 4) coherencia
-(comprobaciones K-01 a K-16, solo avisos). Las capas 1 a 3 rechazan la tabla entera: se aplica toda o nada.
+(comprobaciones K-01 a K-17, solo avisos). Las capas 1 a 3 rechazan la tabla entera: se aplica toda o nada.
 
 Transacciones: los cambios de una tarea van a una copia de trabajo y se confirman cuando la tarea termina bien
 (se escriben en _modelo_ops.jsonl y _modelo.json) o se descartan si falla. Al reanudar, el modelo se reconstruye
@@ -28,6 +28,7 @@ Prueba sin el crew (lote de ejemplo con errores provocados):
     uv run python -m vdi.modelo
 """
 import copy
+import hashlib
 import difflib
 import json
 import re
@@ -94,9 +95,13 @@ def numero(texto: str) -> float:
     return float(m.group(0).replace(",", "."))
 
 
+ESCALAS = {"million": 1e6, "millones": 1e6, "millon": 1e6, "millón": 1e6, "billion": 1e9, "thousand": 1e3, "mil": 1e3}
+
+
 def numero_en_texto(valor: float, texto: str) -> bool:
-    """¿Aparece el valor en el texto? Acepta coma o punto decimal, separador de miles y un factor 1000 (g y kg,
-    mm y m), porque el extracto puede usar otra unidad que el parametro."""
+    """¿Aparece el valor en el texto? Acepta coma o punto decimal, separador de miles, un factor 1000 (g y kg,
+    mm y m), porque el extracto puede usar otra unidad que el parametro, y cifras en palabras («5 million»,
+    «2 millones»: en F2 K-14 no reconocia 5e6 en «Replace after 5 million operations»)."""
     vistos = set()
     for t in re.findall(r"\d[\d.,]*\d|\d", texto or ""):
         for v in (t.replace(",", "."), t.replace(",", ""), t.replace(".", "").replace(",", ".")):
@@ -104,6 +109,8 @@ def numero_en_texto(valor: float, texto: str) -> bool:
                 vistos.add(float(v))
             except ValueError:
                 pass
+    for t, escala in re.findall(r"(\d+(?:[.,]\d+)?)\s*(" + "|".join(ESCALAS) + r")\b", texto or "", re.I):
+        vistos.add(float(t.replace(",", ".")) * ESCALAS[escala.lower()])
     return any(abs(x - valor * f) <= 1e-6 * max(1.0, abs(valor * f)) for x in vistos for f in (1, 1000, 0.001))
 
 
@@ -137,7 +144,7 @@ TRAZA = {"satisface", "realiza", "mide", "determina", "deriva_de", "fuente", "ni
 # reparto de las comprobaciones (F2b): las de registro las repara el autor al final de su tarea, las colectivas
 # (portador y medida) el lider en un cierre, las del producto van al cliente y las de evidencia son informativas
 AUTOR, CIERRE, PRODUCTO, INFO = "autor", "cierre", "producto", "info"
-K_AUTOR = {"K-01", "K-02", "K-03", "K-09", "K-11", "K-12", "K-13", "K-14", "K-16"}
+K_AUTOR = {"K-01", "K-02", "K-03", "K-09", "K-11", "K-12", "K-13", "K-14", "K-16", "K-17"}
 # campos que fijan el diseno: una reparacion no los cambia si ya tienen valor (el analisis en prosa los defiende)
 VALOR_DISENO = {"valor", "unidad", "comparador", "cantidad", "masa_unitaria", "costo_unitario", "presupuesto_masa",
                 "presupuesto_costo", "presupuesto_tiempo", "s", "o", "d"}
@@ -380,6 +387,8 @@ class Modelo:
         self.reparacion = False
         self.reparto = False
         self.notas_reparacion: dict[str, str] = {}  # "K-xx ID" -> nota del autor («se mantiene: ...»)
+        # "K-xx ID" -> huella del elemento cuando el lider lo mantuvo en un cierre: no se le reenvia mientras no cambie
+        self.mantenidos: dict[str, str] = {}
 
     # --- transacciones ---
 
@@ -391,6 +400,14 @@ class Modelo:
         self.reparacion = False
         self._confirmado = copy.deepcopy(self.elementos)
         self._pendientes = []
+
+    def huella(self, i: str) -> str:
+        """Resumen de los campos de diseno del elemento (sin los de trazabilidad): cambia si cambia su diseno."""
+        e = self.elementos.get(i)
+        if not e:
+            return ""
+        campos = {k: v for k, v in e.campos.items() if k not in TRAZA}
+        return hashlib.sha1(json.dumps(campos, ensure_ascii=False, sort_keys=True, default=str).encode("utf-8")).hexdigest()[:12]
 
     def punto(self) -> tuple:
         """Punto de retorno dentro de la transaccion (antes de una ronda de reparacion)."""
@@ -909,7 +926,7 @@ class Modelo:
         reqs = self.de_clase("requerimiento")  # RF, RNF, R y E (las especificaciones no derivan de una necesidad: K-02)
         comps = self.de_clase("componente")
         modulos = self.de_clase("modulo")
-        todas = cuales or [f"K-{n:02d}" for n in range(1, 17)]
+        todas = cuales or [f"K-{n:02d}" for n in range(1, 18)]
         if "K-01" in todas:
             for r in reqs:
                 faltan = [c for c in ("valor", "unidad", "comparador", "verificacion") if r.campos.get(c) in (None, "")]
@@ -1055,6 +1072,22 @@ class Modelo:
         if "K-16" in todas:
             salida += [("K-16", f"{mf.id} ({mf.campos.get('modo', '')}) es de {mf.campos.get('elemento')}, que ya no existe")
                        for mf in self.de_clase("modo_falla") if mf.campos.get("elemento") not in self.elementos]
+        if "K-17" in todas:
+            # la medida igual a la meta de un ≤ o ≥ suele ser la meta copiada, no el valor de diseno (F2: 1 a 7 por
+            # corrida, «cumple (100 %)» sin informacion); los cualitativos «≥ 1» no cuentan
+            for p in self.de_clase("parametro"):
+                v = p.campos.get("valor")
+                if not isinstance(v, (int, float)):
+                    continue
+                for rid in p.campos.get("mide", []):
+                    r = self.elementos.get(rid)
+                    res = self.cumple(v, p.campos.get("unidad", ""), r) if r else None
+                    comp, meta = (r.campos.get("comparador"), r.campos.get("valor")) if r else (None, None)
+                    if res and comp in ("≤", "≥") and abs(res[1] - 1) <= 1e-6 and not (comp == "≥" and meta == 1):
+                        salida.append(("K-17", f"{p.id} {p.campos.get('nombre', '')} = {v:g} {p.campos.get('unidad', '')} es igual a la "
+                                               f"meta de {rid} ({comp} {meta:g} {r.campos.get('unidad', '')}): si es la meta copiada, "
+                                               f"quita {rid} de Mide (pásalo a Contribuye a) y registra el valor de diseño en un "
+                                               f"parámetro que lo mida; si el diseño queda justo en el límite, escribe que se mantiene"))
         return salida
 
     # --- reparto de los avisos (F2b) ---
@@ -1176,7 +1209,7 @@ class Modelo:
             partes.append(self._vista_cliente())
         elif rol in ("cliente", "integrador"):
             avisos = self.comprobar()
-            partes.append("Comprobaciones automáticas (K-01 a K-16):\n" + ("\n".join(f"- {k}: {m}" for k, m in avisos) or "- sin avisos"))
+            partes.append("Comprobaciones automáticas (K-01 a K-17):\n" + ("\n".join(f"- {k}: {m}" for k, m in avisos) or "- sin avisos"))
         return "\n\n".join(p for p in partes if p)
 
     def consultar(self, consulta: str) -> str:
@@ -1646,6 +1679,20 @@ if __name__ == "__main__":
     debe("Comprobaciones del producto" in v and "Calidad de la evidencia" in v and "nota del autor: D-06: se mantiene" in v
          and "K-08: RNF-02" in v.split("Avisos de registro")[1], "vista del cliente con reparto y nota del autor", v.split("Comprobaciones del producto")[1])
     mod.reparto = False
+    mod.ecr_por_defecto = "ECR-01"
+    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide | Fuente |\n|---|---|---|---|---|---|---|\n"
+                      "| DP-22 | Tiempo de ciclo diseñado | 4 | s | CP-01 | RNF-02 | Supuesto |", "mecanica")
+    k = mod.comprobar(["K-17"])
+    debe(r.startswith("Aplicadas 1") and len(k) == 1 and k[0][1].startswith("DP-22") and destino("K-17", k[0][1]) == AUTOR,
+         "K-17 avisa al autor de una medida igual a la meta (4 s frente a ≤ 4 s)", r + str(k))
+    h0 = mod.huella("DP-22")
+    mod.registrar("parametro", "| ID | Contribuye a |\n|---|---|\n| DP-22 | RNF-01 |", "mecanica")
+    h1 = mod.huella("DP-22")
+    mod.registrar("parametro", "| ID | Valor |\n|---|---|\n| DP-22 | 3.6 |", "mecanica")
+    debe(h0 == h1 != mod.huella("DP-22") and not mod.comprobar(["K-17"]),
+         "la huella cambia con el diseño y no con la trazabilidad; con 3,6 s K-17 ya no avisa")
+    debe(numero_en_texto(5e6, "Replace after 5 million operations") and numero_en_texto(2e6, "vida de 2 millones de ciclos")
+         and not numero_en_texto(5e7, "Replace after 5 million operations"), "K-14 reconoce cifras en palabras («5 million»)")
     mod.descartar()
 
     # reanudacion y exportacion
