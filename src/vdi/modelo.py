@@ -144,7 +144,12 @@ TRAZA = {"satisface", "realiza", "mide", "determina", "deriva_de", "fuente", "ni
 # reparto de las comprobaciones (F2b): las de registro las repara el autor al final de su tarea, las colectivas
 # (portador y medida) el lider en un cierre, las del producto van al cliente y las de evidencia son informativas
 AUTOR, CIERRE, PRODUCTO, INFO = "autor", "cierre", "producto", "info"
-K_AUTOR = {"K-01", "K-02", "K-03", "K-09", "K-11", "K-12", "K-13", "K-14", "K-16", "K-17"}
+# K-17 va al cliente (F2d): en F2c el autor nunca la corrigio (9 de 9 «se mantiene» en 01b) y el margen cero es
+# materia del producto
+K_AUTOR = {"K-01", "K-02", "K-03", "K-09", "K-11", "K-12", "K-13", "K-14", "K-16"}
+# restricciones dadas (R-xx) que se verifican por inspeccion o con la hoja de datos: carga del robot, aire de planta,
+# celda resguardada; ningun parametro del diseno las mide ni las porta (F2: cierres que las mantenian una y otra vez)
+VERIFICACION_DADA = re.compile(r"inspecci|hoja de datos|datasheet|ficha|dato dado|dato del")
 # campos que fijan el diseno: una reparacion no los cambia si ya tienen valor (el analisis en prosa los defiende)
 VALOR_DISENO = {"valor", "unidad", "comparador", "cantidad", "masa_unitaria", "costo_unitario", "presupuesto_masa",
                 "presupuesto_costo", "presupuesto_tiempo", "s", "o", "d"}
@@ -465,8 +470,10 @@ class Modelo:
             self.elementos.pop(i, None)
         elif i in self.elementos:
             e = self.elementos[i]
-            # el agente suele reenviar la fila completa: solo cuenta como cambio de diseno lo que de verdad cambio
-            if any(e.campos.get(k) != v for k, v in op["campos"].items() if k not in TRAZA):
+            # el agente suele reenviar la fila completa: solo cuenta como cambio de diseno lo que de verdad cambio;
+            # una decision reenviada en la ronda de reparacion cuenta como revisada aunque no cambie (K-13; 29106)
+            if any(e.campos.get(k) != v for k, v in op["campos"].items() if k not in TRAZA) or \
+                    (op.get("reparacion") and op["clase"] == "decision"):
                 e.cambio = self._paso
             e.campos.update(op["campos"])
         else:
@@ -918,6 +925,12 @@ class Modelo:
             return False
         return not (c["comparador"] == "=" and c.get("unidad") == "—")
 
+    @staticmethod
+    def restriccion_dada(r: Elemento) -> bool:
+        """Restriccion R-xx que se verifica por inspeccion o con la hoja de datos: sin medida ni portador (K-06, K-08,
+        K-17 no avisan)."""
+        return r.id.startswith("R-") and bool(VERIFICACION_DADA.search(sin_tildes(r.campos.get("verificacion", ""))))
+
     # --- comprobaciones de coherencia (capa 4) ---
 
     def comprobar(self, cuales: list[str] | None = None) -> list[tuple[str, str]]:
@@ -969,7 +982,8 @@ class Modelo:
             # el parametro que mide un requerimiento se compara con su meta, con unidades (los que solo contribuyen
             # no: un tiempo parcial no cumple ni incumple el tiempo de ciclo)
             medidos = {r for p in self.de_clase("parametro") for r in p.campos.get("mide", [])}
-            sin_medida = [r.id for r in reqs if self.cuantitativo(r) and r.id not in medidos and not r.campos.get("limita")]
+            sin_medida = [r.id for r in reqs if self.cuantitativo(r) and r.id not in medidos and not r.campos.get("limita")
+                          and not self.restriccion_dada(r)]
             if sin_medida:
                 salida.append(("K-06", f"con meta numérica y sin un parámetro que los mida (columna Mide), su cumplimiento "
                                        f"no se puede calcular: {', '.join(sin_medida)}"))
@@ -1002,7 +1016,7 @@ class Modelo:
             # total del sistema, el propio total (lo compara el codigo)
             portados = {r for e in comps + modulos for r in e.campos.get("satisface", [])}
             portados |= {r for p in self.de_clase("parametro") for r in p.campos.get("determina", []) + p.campos.get("mide", [])}
-            portados |= {r.id for r in reqs if r.campos.get("limita")}
+            portados |= {r.id for r in reqs if r.campos.get("limita") or self.restriccion_dada(r)}
             salida += [("K-08", f"{r.id} sin componente, módulo ni parámetro que lo satisfaga o determine")
                        for r in reqs if r.id not in portados]
         if "K-09" in todas:
@@ -1081,13 +1095,14 @@ class Modelo:
                     continue
                 for rid in p.campos.get("mide", []):
                     r = self.elementos.get(rid)
+                    if r and self.restriccion_dada(r):  # el dato dado del entorno no es una meta copiada
+                        continue
                     res = self.cumple(v, p.campos.get("unidad", ""), r) if r else None
                     comp, meta = (r.campos.get("comparador"), r.campos.get("valor")) if r else (None, None)
                     if res and comp in ("≤", "≥") and abs(res[1] - 1) <= 1e-6 and not (comp == "≥" and meta == 1):
                         salida.append(("K-17", f"{p.id} {p.campos.get('nombre', '')} = {v:g} {p.campos.get('unidad', '')} es igual a la "
-                                               f"meta de {rid} ({comp} {meta:g} {r.campos.get('unidad', '')}): si es la meta copiada, "
-                                               f"quita {rid} de Mide (pásalo a Contribuye a) y registra el valor de diseño en un "
-                                               f"parámetro que lo mida; si el diseño queda justo en el límite, escribe que se mantiene"))
+                                               f"meta de {rid} ({comp} {meta:g} {r.campos.get('unidad', '')}): margen cero; confirma en "
+                                               f"los análisis si es el valor de diseño o la meta copiada"))
         return salida
 
     # --- reparto de los avisos (F2b) ---
@@ -1133,7 +1148,7 @@ class Modelo:
             else:
                 grupos[d].append(f"- {k}: {msg}")
         return "\n\n".join([
-            "Comprobaciones del producto (K-04, K-05, K-06, K-07; confírmalas en los análisis antes de abrir una ECR):\n" +
+            "Comprobaciones del producto (K-04, K-05, K-06, K-07, K-17; confírmalas en los análisis antes de abrir una ECR):\n" +
             ("\n".join(grupos[PRODUCTO]) or "- sin avisos"),
             "Calidad de la evidencia (K-10, K-15; informativa):\n" + ("\n".join(grupos[INFO]) or "- sin avisos"),
             "Avisos de registro (enlaces, portadores, decisiones y citas), ya revisados por sus autores; no son materia de "
@@ -1624,6 +1639,15 @@ if __name__ == "__main__":
     debe(mod.disciplina_de("D-04") == "mecanica" and mod.disciplina_de("MF-01") == "rams" and mod.disciplina_de("CAL-01") is None,
          "disciplina de decisiones, modos de falla y evidencia")
     mod.confirmar()
+    mod.iniciar_tarea("prueba_f2d_k13", iteracion=2)
+    mod.registrar("componente", "| ID | Cantidad | ECR |\n|---|---|---|\n| CP-02 | 10 | ECR-01 |", "mecanica")
+    k = mod.comprobar(["K-13"])
+    mod.reparacion = True
+    r = mod.registrar("decision", "| ID | Justifica |\n|---|---|\n| D-04 | CP-02; DP-05 |", "mecanica")
+    mod.reparacion = False
+    debe(any("D-04" in m for _, m in k) and r.startswith("Aplicadas 1") and not mod.comprobar(["K-13"]),
+         "una decisión reenviada sin cambios en la ronda del autor cuenta como revisada (K-13)", r + str(k))
+    mod.descartar()
 
     # F2b: arreglos del piloto y ronda de reparacion
     mod.iniciar_tarea("prueba_f2b", iteracion=3, ecrs=["ECR-01"])
@@ -1683,14 +1707,25 @@ if __name__ == "__main__":
     r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide | Fuente |\n|---|---|---|---|---|---|---|\n"
                       "| DP-22 | Tiempo de ciclo diseñado | 4 | s | CP-01 | RNF-02 | Supuesto |", "mecanica")
     k = mod.comprobar(["K-17"])
-    debe(r.startswith("Aplicadas 1") and len(k) == 1 and k[0][1].startswith("DP-22") and destino("K-17", k[0][1]) == AUTOR,
-         "K-17 avisa al autor de una medida igual a la meta (4 s frente a ≤ 4 s)", r + str(k))
+    debe(r.startswith("Aplicadas 1") and len(k) == 1 and k[0][1].startswith("DP-22") and destino("K-17", k[0][1]) == PRODUCTO,
+         "K-17 avisa al cliente de una medida igual a la meta (4 s frente a ≤ 4 s)", r + str(k))
     h0 = mod.huella("DP-22")
     mod.registrar("parametro", "| ID | Contribuye a |\n|---|---|\n| DP-22 | RNF-01 |", "mecanica")
     h1 = mod.huella("DP-22")
     mod.registrar("parametro", "| ID | Valor |\n|---|---|\n| DP-22 | 3.6 |", "mecanica")
     debe(h0 == h1 != mod.huella("DP-22") and not mod.comprobar(["K-17"]),
          "la huella cambia con el diseño y no con la trazabilidad; con 3,6 s K-17 ya no avisa")
+    r = mod.registrar("requerimiento", "| ID | Requerimiento | Comparador | Valor | Unidad | Verificación | Deriva de |\n|---|---|---|---|---|---|---|\n"
+                      "| R-02 | Carga útil del robot | ≤ | 7 | kg | Inspección de la hoja de datos | N-02 |\n"
+                      "| R-03 | Presión de la línea | ≤ | 6 | bar | Ensayo | N-02 |", "lider")
+    k0 = mod.comprobar(["K-06", "K-08"])
+    r2 = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide |\n|---|---|---|---|---|---|\n"
+                       "| DP-23 | Carga en la muñeca | 7 | kg | M-01 | R-02 |", "lider")
+    k = mod.comprobar(["K-06", "K-08", "K-17"])
+    debe(r.startswith("Aplicadas 2") and r2.startswith("Aplicadas 1")
+         and not any("R-02" in m for _, m in k0) and not any("R-02" in m for x, m in k if x != "K-06")
+         and any(x == "K-08" and "R-03" in m for x, m in k) and any(x == "K-06" and "R-03" in m for x, m in k),
+         "una restricción dada por inspección no pide medida ni portador ni avisa de margen cero (K-06, K-08, K-17)", r + r2 + str(k))
     debe(numero_en_texto(5e6, "Replace after 5 million operations") and numero_en_texto(2e6, "vida de 2 millones de ciclos")
          and not numero_en_texto(5e7, "Replace after 5 million operations"), "K-14 reconoce cifras en palabras («5 million»)")
     mod.descartar()

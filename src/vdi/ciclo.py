@@ -37,7 +37,7 @@ Al final, el lider escribe la prosa del informe para el ingeniero y el codigo le
 (00_informe_ingeniero.html, informe_final.py; VDI_INFORME_FINAL=0 lo apaga).
 
 Reparacion del modelo (F2b, con informes generados): al terminar una tarea de un autor (01 a 05 y las correcciones),
-los avisos de registro nuevos que nombran algo suyo (K-01, K-02, K-03, K-09, K-11 a K-14, K-16, K-17) vuelven al mismo
+los avisos de registro nuevos que nombran algo suyo (K-01, K-02, K-03, K-09, K-11 a K-14, K-16) vuelven al mismo
 agente en una ronda corta (model_repair_task, solo herramientas del modelo) antes de confirmar; la ronda no cambia
 valores del diseno y, si falla, se deshace sin tumbar la tarea. Los portadores y las medidas (K-08, K-06 sin medida)
 los cierra el lider despues de 05 y de las correcciones de cada iteracion; lo que ya mantuvo con nota no se le

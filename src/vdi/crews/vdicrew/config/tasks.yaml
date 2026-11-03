@@ -218,7 +218,8 @@ ecr_triage_task:
     conceptos y QFD etapa 2), mecanica, electronica, software, rams o sistema. Los errores en tus propios informes los corriges tú
     como requerimientos o sintesis. Usa sistema solo si la corrección exige cambiar el concepto seleccionado o la arquitectura del
     producto: esas ECR no se corrigen en el ciclo y quedan para la integración final. Si una ECR toca dos disciplinas, asígnala a la
-    que debe cambiar primero; la otra revisará el impacto. Asignación de la iteración anterior: [[TRIAJE_ANTERIOR]]. Mantén la misma
+    que debe cambiar primero; la otra revisará el impacto. Si la ECR solo se resuelve cambiando una meta (igual a una capacidad del robot o
+    del entorno, o en conflicto con otra meta), asígnala a requerimientos; si exige cambiar una decisión de la síntesis, a sintesis. Asignación de la iteración anterior: [[TRIAJE_ANTERIOR]]. Mantén la misma
     disciplina para cada ECR salvo que la última verificación del cliente muestre que el cambio corresponde a otra; si la cambias,
     explica por qué en la justificación. Tipos: corregible (un cambio de diseño de la disciplina la resuelve), prueba (requiere medición, ensayo, prototipo o
     simulación que no se puede hacer en esta fase) o cotizacion (requiere una cotización formal). REGLA DE TIPO: si el criterio del
