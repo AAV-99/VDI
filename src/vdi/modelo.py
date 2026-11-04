@@ -148,8 +148,9 @@ AUTOR, CIERRE, PRODUCTO, INFO = "autor", "cierre", "producto", "info"
 # materia del producto
 K_AUTOR = {"K-01", "K-02", "K-03", "K-09", "K-11", "K-12", "K-13", "K-14", "K-16"}
 # restricciones dadas (R-xx) que se verifican por inspeccion o con la hoja de datos: carga del robot, aire de planta,
-# celda resguardada; ningun parametro del diseno las mide ni las porta (F2: cierres que las mantenian una y otra vez)
-VERIFICACION_DADA = re.compile(r"inspecci|hoja de datos|datasheet|ficha|dato dado|dato del")
+# celda resguardada; ningun parametro del diseno las mide ni las porta (F2: cierres que las mantenian una y otra vez).
+# «Enunciado» y «Manual ...» solo al inicio: «prueba manual de carga» es un ensayo (F2d, 29128)
+VERIFICACION_DADA = re.compile(r"inspecci|hoja de datos|datasheet|ficha|dato dado|dato del|^\s*(enunciado|manual)\b")
 # campos que fijan el diseno: una reparacion no los cambia si ya tienen valor (el analisis en prosa los defiende)
 VALOR_DISENO = {"valor", "unidad", "comparador", "cantidad", "masa_unitaria", "costo_unitario", "presupuesto_masa",
                 "presupuesto_costo", "presupuesto_tiempo", "s", "o", "d"}
@@ -1718,6 +1719,13 @@ if __name__ == "__main__":
     r = mod.registrar("requerimiento", "| ID | Requerimiento | Comparador | Valor | Unidad | Verificación | Deriva de |\n|---|---|---|---|---|---|---|\n"
                       "| R-02 | Carga útil del robot | ≤ | 7 | kg | Inspección de la hoja de datos | N-02 |\n"
                       "| R-03 | Presión de la línea | ≤ | 6 | bar | Ensayo | N-02 |", "lider")
+    mod.registrar("requerimiento", "| ID | Requerimiento | Comparador | Valor | Unidad | Verificación | Deriva de |\n|---|---|---|---|---|---|---|\n"
+                  "| R-04 | Líneas de aire | ≤ | 2 | líneas | Enunciado | N-02 |\n"
+                  "| R-05 | Corriente por salida | ≤ | 200 | mA | Manual G4-CD60, pág. 21 | N-02 |\n"
+                  "| R-06 | Fuerza del operador | ≤ | 50 | N | Prueba manual de carga | N-02 |", "lider")
+    k1 = mod.comprobar(["K-08"])
+    debe(not any("R-04" in m or "R-05" in m for _, m in k1) and any("R-06" in m for _, m in k1),
+         "«Enunciado» y «Manual ...» son restricciones dadas; una prueba manual no", str(k1))
     k0 = mod.comprobar(["K-06", "K-08"])
     r2 = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide |\n|---|---|---|---|---|---|\n"
                        "| DP-23 | Carga en la muñeca | 7 | kg | M-01 | R-02 |", "lider")

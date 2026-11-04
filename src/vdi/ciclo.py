@@ -11,7 +11,8 @@
       el cliente en la verificacion. Las ECR de nivel sistema (cambio de concepto o de arquitectura) no se
       corrigen en el ciclo.
    c. Verificacion del cliente: estado de cada ECR atendida frente a su criterio y ECR nuevas.
-   El ciclo termina si no quedan ECR corregibles, si se alcanza MAX_CICLOS o si todas las corregibles
+   El ciclo termina si todas las ECR ya estan en Cumple (sin triaje), si no quedan ECR corregibles, si se alcanza
+   MAX_CICLOS o si todas las corregibles
    restantes ya fallaron dos veces (quedan escaladas para el integrador). Una tarea del ciclo que falla tras
    MAX_INTENTOS_TAREA intentos no tumba la corrida: una correccion fallida deja sus ECR como fallidas y el ciclo
    sigue; un triaje o una verificacion fallidos terminan el ciclo con su motivo y se pasa al integrador.
@@ -582,9 +583,20 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
         _guardar_historial(h)
     lider = vc.team_lead()
     v_cliente, ruta_cliente = ultima_version(CLIENTE)
+    ruta_triaje = RUN_DIR / f"07_triaje_it{k}.md"
+
+    # Lo que el cliente ya dejo en Cumple no se triaja ni se corrige: el lider lo listaba como corregible y se repetian
+    # correcciones y verificaciones sin cambio hasta el limite de iteraciones (29129: 2 iteraciones, 1,8 h)
+    en_cumple = {e for e, estado in estados_cliente().items() if estado == "cumple"}
+    conocidas = {f["ecr"] for it in h["iteraciones"] for f in it.get("triaje", [])} | set(estados_cliente())
+    if MODELO["m"]:
+        conocidas |= {e.id for e in MODELO["m"].de_clase("ecr")}
+    if k > 1 and conocidas and conocidas <= en_cumple and not ruta_triaje.exists():
+        registro["resultado"] = "sin ECR abiertas"
+        _guardar_historial(h)
+        return False
 
     # a. Triaje
-    ruta_triaje = RUN_DIR / f"07_triaje_it{k}.md"
     if not ruta_triaje.exists():
         ctx = _contexto_actual(vc, ["01b_system_synthesis"]) + [_previa(ruta_cliente.stem, _leer(ruta_cliente), lider)]
         escaladas = ", ".join(h["escaladas"]) or "ninguna"
@@ -612,8 +624,9 @@ def iteracion(vc: VdiCrew, inputs: dict, k: int, h: dict) -> bool:
             return False
     triaje = leer_triaje(_agente_txt(ruta_triaje))
     registro["triaje"] = triaje
-    asignadas = {d: [f for f in triaje if f["disciplina"] == d and f["tipo"] == "corregible" and f["ecr"] not in h["escaladas"]]
-                 for d in ORDEN}
+    asignadas = {d: [f for f in triaje if f["disciplina"] == d and f["tipo"] == "corregible"
+                     and f["ecr"] not in h["escaladas"] and f["ecr"] not in en_cumple] for d in ORDEN}
+    registro["ignoradas_en_cumple"] = sorted({f["ecr"] for f in triaje if f["tipo"] == "corregible"} & en_cumple)
     registro["escaladas_sistema"] = [f["ecr"] for f in triaje if f["disciplina"] == "sistema"]
     if not any(asignadas.values()):
         registro["resultado"] = "sin ECR corregibles"
