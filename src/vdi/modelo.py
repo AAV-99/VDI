@@ -152,6 +152,7 @@ K_AUTOR = {"K-01", "K-02", "K-03", "K-09", "K-11", "K-12", "K-13", "K-14", "K-16
 # «Enunciado» y «Manual ...» solo al inicio: «prueba manual de carga» es un ensayo (F2d, 29128)
 VERIFICACION_DADA = re.compile(r"inspecci|hoja de datos|datasheet|ficha|dato dado|dato del|^\s*(enunciado|manual)\b")
 # campos que fijan el diseno: una reparacion no los cambia si ya tienen valor (el analisis en prosa los defiende)
+VACIAR_RELACION = {"ninguno", "ninguna"}  # en una celda de enlaces opcional de un elemento existente: la deja vacia
 VALOR_DISENO = {"valor", "unidad", "comparador", "cantidad", "masa_unitaria", "costo_unitario", "presupuesto_masa",
                 "presupuesto_costo", "presupuesto_tiempo", "s", "o", "d"}
 
@@ -518,7 +519,14 @@ class Modelo:
             self._aplicar(op)
             self._pendientes.append(op)
         ops = [o for o in ops if o["clase"] == clase]  # el resumen cuenta solo las filas de la tabla
+        # una fila sin ningun campo no cambio nada: se informa como tal y no como modificada (29168)
+        quietas = [o["id"] for o in ops if o["accion"] == "modificar" and not o["campos"]]
         cuenta = {a: sum(o["accion"] == a for o in ops) for a in ("crear", "modificar", "eliminar")}
+        cuenta["modificar"] -= len(quietas)
+        cuenta["sin cambios"] = len(quietas)
+        if quietas:
+            avisos.append(f"{', '.join(quietas)} sin cambios: una celda vacía o con — conserva el valor anterior; "
+                          "para quitar una relación escribe ninguno en su celda")
         resumen = f"Aplicadas {len(ops)} filas de {clase}: " + ", ".join(f"{v} {k}" for k, v in cuenta.items() if v) + "."
         return resumen + ("\nAvisos:\n" + "\n".join(f"- {a}" for a in avisos) if avisos else "")
 
@@ -594,6 +602,12 @@ class Modelo:
             # modificar, «-» o «—» siguen siendo «sin cambio» para no borrar la unidad de un requerimiento existente
             if (clase, campo) == ("requerimiento", "unidad") and texto and sin_tildes(texto).strip().lower() in SIN_UNIDAD                     and not (existe and texto in ("-", "—")):
                 campos[campo] = "—"
+                continue
+            # quitar una relacion de un elemento existente: «ninguno» en su celda; vacia, «-» y «—» siguen siendo «sin
+            # cambio» porque el agente suele reenviar la fila completa (26599 y 29168 no pudieron quitar un enlace)
+            if existe and texto and sin_tildes(texto).strip().lower() in VACIAR_RELACION \
+                    and CLASES[clase][campo][1].startswith("ids:") and not CLASES[clase][campo][2]:
+                campos[campo] = []
                 continue
             if not texto or texto in ("-", "—"):
                 continue
@@ -1736,6 +1750,15 @@ if __name__ == "__main__":
          "una restricción dada por inspección no pide medida ni portador ni avisa de margen cero (K-06, K-08, K-17)", r + r2 + str(k))
     debe(numero_en_texto(5e6, "Replace after 5 million operations") and numero_en_texto(2e6, "vida de 2 millones de ciclos")
          and not numero_en_texto(5e7, "Replace after 5 million operations"), "K-14 reconoce cifras en palabras («5 million»)")
+    r = mod.registrar("parametro", "| ID | Mide |\n|---|---|\n| DP-23 | — |", "lider")
+    debe("1 sin cambios" in r and "1 modificar" not in r and "ninguno" in r and mod.elementos["DP-23"].campos["mide"] == ["R-02"],
+         "una fila que no cambia nada se informa como sin cambios y dice cómo quitar la relación", r)
+    r = mod.registrar("parametro", "| ID | Mide |\n|---|---|\n| DP-23 | ninguno |", "lider")
+    debe("1 modificar" in r and mod.elementos["DP-23"].campos["mide"] == [],
+         "«ninguno» quita la relación", r)
+    r = mod.registrar("parametro", "| ID | Nombre | Valor | Unidad | Elemento | Mide |\n|---|---|---|---|---|---|\n"
+                      "| DP-24 | Otro | 1 | kg | M-01 | ninguno |", "lider")
+    debe(r.startswith("Tabla rechazada"), "«ninguno» no vale al crear un elemento", r)
     mod.descartar()
 
     # reanudacion y exportacion
